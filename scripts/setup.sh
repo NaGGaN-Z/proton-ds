@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# proton-ds4emu setup — install the DS4-under-Proton stack.
+# proton-ds setup — install the DS-under-Proton stack.
 # Skeleton: detection + verification wired; patch application TODO.
 set -euo pipefail
 
 CT_DIR="${CT_DIR:-$HOME/.local/share/Steam/compatibilitytools.d}"
 
-say() { printf '\033[1;36m[proton-ds4]\033[0m %s\n' "$*"; }
-die() { printf '\033[1;31m[proton-ds4] FATAL:\033[0m %s\n' "$*" >&2; exit 1; }
+say() { printf '\033[1;36m[proton-ds]\033[0m %s\n' "$*"; }
+die() { printf '\033[1;31m[proton-ds] FATAL:\033[0m %s\n' "$*" >&2; exit 1; }
 
 # ── 1. Detect GE-Proton installs ────────────────────────────────────────────
 say "scanning $CT_DIR ..."

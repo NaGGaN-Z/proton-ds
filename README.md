@@ -1,4 +1,4 @@
-# proton-ds4emu — DS4 emulation for Proton with PS icons
+# proton-ds — DualShock family under Proton, done right
 
 PS glyphs + correct native input + touchpad for a DualSense→DS4 virtual
 gamepad under Proton/Wine. Verified 4/4:
@@ -44,8 +44,8 @@ rollback inventory): `docs/SOLUTION.md`.
 ## Install (skeleton state — the script is being filled in)
 
 ```bash
-git clone https://github.com/NaGGaN-Z/proton-ds4emu   # TODO: repo name
-cd proton-ds4emu
+git clone https://github.com/NaGGaN-Z/proton-ds
+cd proton-ds
 sudo ./scripts/setup.sh          # detect GE → patch → verify
 ```
 

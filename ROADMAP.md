@@ -23,7 +23,7 @@
 
 ## v0.3 — Comfort & adoption
 
-- [ ] `proton-ds4 status` — one-command health check (daemon, gadget, Proton patches, per-game prefix state)
+- [ ] `proton-ds status` — one-command health check (daemon, gadget, Proton patches, per-game prefix state)
 - [ ] Tray GUI (thin wrapper over CLI): emulation ON/OFF, Proton status, game matrix
 - [ ] Troubleshooting guide (log capture wizard: PROTON_LOG flags explained)
 - [ ] AUR / COPR packaging
