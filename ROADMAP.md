@@ -34,8 +34,11 @@
 - [ ] hex-patches → source .patch files against winexinput/hidclass
       (survives rebuilds, reviewable)
 - [ ] BT transport for the virtual device (currently USB-style UHID only)
-- [ ] Motion/gyro translation path (VirtualMotion exists in daemon;
-      games-side consumer unknown)
+- [ ] Native DualSense path (no emulation): V1 already classifies real DS5
+      (`is_gamepad 1` verified in logs), game opens the IG_03 interface —
+      but input dead before the feature dance (DS:DC test 2026-08-15).
+      Investigate: swap coverage for `IG_03` suffix strings, caps answers
+      of the real DS5 vs game expectations.
 - [ ] E3 gadget topology (f_hid) — the "honest" alternative to wine-side
       strings/version patches; revisit if upstream resistance to V1.1/V1.2
 
