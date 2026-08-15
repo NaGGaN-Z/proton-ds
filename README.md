@@ -36,8 +36,7 @@ user action is selecting the patched Proton instance for a game.
    once → no double input, no per-game registry hacks.
 
 Full engineering story (detection-chain decode, why each piece exists,
-rollback inventory): `docs/SOLUTION.md` (also mirrored in the
-[proton-ds4-debug skill][skill] of the AI-OPS repo).
+rollback inventory): `docs/SOLUTION.md`.
 
 ## Install (skeleton state — the script is being filled in)
 
@@ -82,7 +81,6 @@ docs/       SOLUTION.md — the decoded detection chain + full stack rationale
 
 [fork]: https://github.com/NaGGaN-Z/ds4linux
 [pr]: https://github.com/PalashDalsaniya/ds4linux/pull/3
-[skill]: https://github.com/NaGGaN-Z/AI-OPS
 [vigem]: https://github.com/nefarius/ViGEmBus
 [ds4w]: https://github.com/CircumSpector/DS4Windows
 [ds4linux]: https://github.com/PalashDalsaniya/ds4linux
