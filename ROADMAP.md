@@ -34,11 +34,12 @@
 - [ ] SenseShock cross-check (daemon-side blobs comparison; why no BT there)
 - [ ] hex-patches → source .patch files against winexinput/hidclass
       (survives rebuilds, reviewable)
-- [ ] E3 gadget topology (f_hid) — kernel-side alternative that would
-      provide a real USB parent (strings, version, topology for free) and
-      could replace the wine-side V1.1/V1.2 fabrication patches entirely.
-      Big effort, currently unnecessary (the wine-side stack is verified);
-      interesting only as a "zero wine patches" configuration
+- [ ] E3 gadget topology (f_hid) — kernel-side alternative for the
+      V1.1/V1.2 layer only: a real USB parent provides strings, version
+      and topology natively, dropping the wine-side fabrication patch.
+      V1 (is_gamepad), the winexinput swap and the GUID patch stay
+      regardless (verified: stock chain is dead without them). Big
+      effort, currently unnecessary — a cleanup, not an enabler
 
 ## Done
 
