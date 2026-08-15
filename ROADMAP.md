@@ -34,8 +34,11 @@
 - [ ] SenseShock cross-check (daemon-side blobs comparison; why no BT there)
 - [ ] hex-patches → source .patch files against winexinput/hidclass
       (survives rebuilds, reviewable)
-- [ ] E3 gadget topology (f_hid) — the "honest" alternative to wine-side
-      strings/version patches; revisit if upstream resistance to V1.1/V1.2
+- [ ] E3 gadget topology (f_hid) — kernel-side alternative that would
+      provide a real USB parent (strings, version, topology for free) and
+      could replace the wine-side V1.1/V1.2 fabrication patches entirely.
+      Big effort, currently unnecessary (the wine-side stack is verified);
+      interesting only as a "zero wine patches" configuration
 
 ## Done
 
