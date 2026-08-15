@@ -34,7 +34,6 @@
 - [ ] SenseShock cross-check (daemon-side blobs comparison; why no BT there)
 - [ ] hex-patches → source .patch files against winexinput/hidclass
       (survives rebuilds, reviewable)
-- [ ] BT transport for the virtual device (currently USB-style UHID only)
 - [ ] Native DualSense regression on patched Proton (RESOLVED root cause
       2026-08-15): V1 (is_gamepad) lifts the winexinput stack over the real
       DS5 → game sees synthetic IG_03 + GUID-hidden XI_03, and the bare
