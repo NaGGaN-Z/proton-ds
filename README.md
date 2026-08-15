@@ -13,9 +13,6 @@ gamepad under Proton/Wine. Verified 4/4:
 Zero per-game configuration: everything installs system-side; the only
 user action is selecting the patched Proton instance for a game.
 
-> Local dev note: this directory is `proton-ds4emu`, the GitHub repo is
-> `proton-ds4`. Same thing.
-
 ## How it works (the five components)
 
 1. **ds4ctl wrapper** — lifecycle + hides the real DualSense hidraw
