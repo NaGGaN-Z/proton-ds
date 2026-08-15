@@ -65,5 +65,24 @@ daemon `.touchbak`/`.a3bak`/`.strings-e1bak`/`.pre-e6bak`; winebus `.b1bak`/`.v1
 
 ## Upstream posture
 
-- **V1 (is_gamepad)** — honest bugfix (real DualSense over USB suffers identically); MR-ready for wine-mirror.
-- V1.1/V1.2 strings+version, SWAP, GUID — product-only (GE-style distribution channel), NOT upstream material: they fabricate data or trade XInput-only-game compatibility for DS4-first policy. On this config an XInput-only game without SDL fallback loses the pad — that's the accepted scope.
+**None of this is upstream-ready as-is.** Honest assessment:
+
+- **V1 (is_gamepad)** — NOT a clean bugfix, despite appearances. The real
+  gap is that the hidraw backend has *no gamepad classification for any
+  device* (an Xbox pad on hidraw hits the same wall). Our patch papers
+  over that gap with a Sony VID/PID allowlist — exactly the pattern wine
+  review rejects ("don't hardcode vendors; classify from the descriptor
+  like the evdev path does"). An upstream-quality fix would implement
+  descriptor-based classification in the hidraw path and drop the
+  allowlist. Our V1 also exists to lift the winexinput stack on purpose
+  (product policy), which is not what upstream wants hidraw
+  classification to mean.
+- **V1.1/V1.2 strings+version** — data fabrication (pretend USB parent
+  topology); not upstream material on principle.
+- **SWAP, GUID** — product policy, trades XInput-only-game compatibility
+  for a DS-first setup; not upstream material. On this config an
+  XInput-only game without SDL fallback loses the pad — accepted scope.
+
+A possible future upstream contribution is a *descriptor-based* hidraw
+classification (separate design work, not this patch); until then this
+repo ships everything itself, GE-Proton-style.

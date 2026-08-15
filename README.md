@@ -68,9 +68,12 @@ docs/       SOLUTION.md — the decoded detection chain + full stack rationale
 
 ## Scope & upstream posture
 
-- `is_gamepad` winebus fix is a genuine upstream bugfix candidate
-  (real DualSense over USB suffers identically on stock winebus).
-- The swap/GUID patches are product policy (DS4-first): on this setup an
+- **Nothing here is upstream-ready as-is.** The `is_gamepad` patch looks
+  like a bugfix but hardcodes a Sony VID/PID allowlist over a broader gap
+  (hidraw has no gamepad classification for *any* device); an honest
+  upstream fix would classify from the HID descriptor instead. This repo
+  ships everything itself, GE-Proton-style.
+- The swap/GUID patches are product policy (DS-first): on this setup an
   XInput-only game without an SDL fallback loses the pad. Use a stock
   Proton instance for such games.
 - Stock Proton + daemon only = pad not visible (empirically verified,

@@ -16,9 +16,10 @@
 
 - [ ] GitHub Actions: build winebus.so for a matrix of GE-Proton versions
 - [ ] Auto-detect GE version → pick matching prebuilt (or warn+build)
-- [ ] Winebus patch upstreaming attempt (is_gamepad only — the honest
-      bugfix; separate MR to wine-mirror) → drop it from our payload
-      once merged upstream
+- [ ] Optional upstream contribution: descriptor-based hidraw gamepad
+      classification (a NEW design, not our VID/PID patch — the allowlist
+      is product policy, see docs/SOLUTION.md upstream posture). Only if
+      someone wants to do the wine-review dance.
 - [ ] Test matrix: 2-3 kernels, Steam Deck (read-only /usr caveat!), NixOS/immutable distros notes
 
 ## v0.3 — Comfort & adoption
