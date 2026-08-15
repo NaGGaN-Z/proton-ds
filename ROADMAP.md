@@ -34,13 +34,13 @@
 - [ ] SenseShock cross-check (daemon-side blobs comparison; why no BT there)
 - [ ] hex-patches → source .patch files against winexinput/hidclass
       (survives rebuilds, reviewable)
-- [ ] Native DualSense regression on patched Proton (RESOLVED root cause
-      2026-08-15): V1 (is_gamepad) lifts the winexinput stack over the real
-      DS5 → game sees synthetic IG_03 + GUID-hidden XI_03, and the bare
-      `MI_03` interface (which stock serves and DS:DC opens natively) is
-      gone → input dead on B1, works on stock. Fix candidate: restrict V1
-      to DS4 PIDs (05C4/09CC), leave DualSense on the stock path.
-      E2-strings/V1.2 also need the same PID review.
+- [x] Native DualSense regression on patched Proton — RESOLVED 2026-08-15:
+      V1 (is_gamepad) lifted the winexinput stack over the real DS5,
+      replacing the bare `MI_03` interface (which DS:DC opens natively)
+      with synthetic IG_03 + GUID-hidden XI_03. Fixed by V1.3: DS4 PIDs
+      only (05C4/09CC/0BA0); DualSense stays on the stock path. Verified:
+      DS:DC native DualSense + Detroit emulation both work on the same
+      patched instance.
 - [ ] E3 gadget topology (f_hid) — the "honest" alternative to wine-side
       strings/version patches; revisit if upstream resistance to V1.1/V1.2
 
