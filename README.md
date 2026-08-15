@@ -7,8 +7,14 @@ gamepad under Proton/Wine. Verified 4/4:
 |---|---|---|
 | Detroit: Become Human | libScePad (strict probe) | ✅ icons + input + touchpad |
 | The Witcher 3 | SDL2 | ✅ icons + input |
-| Baldur's Gate 3 | SDL2 | ✅ icons |
+| Baldur's Gate 3 | SDL2 | ✅ icons + input |
 | DEATH STRANDING DC | SDL2/Decima | ✅ icons + input |
+| DEATH STRANDING DC (native DualSense, no daemon) | MI_xx passthrough | ✅ icons + input |
+
+Device coverage: DS4 family via emulation (DualShock 4 v1/v2, and any
+source controller the daemon can read — DualSense→DS4 is the verified
+path), native DualSense passthrough. DS3/DS2 are out of scope (different
+protocols, not HID-DS4-style).
 
 Zero per-game configuration: everything installs system-side; the only
 user action is selecting the patched Proton instance for a game.
