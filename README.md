@@ -69,6 +69,11 @@ docs/       SOLUTION.md — the decoded detection chain + full stack rationale
   Proton instance for such games.
 - Stock Proton + daemon only = pad not visible (empirically verified,
   see PR #3 discussion).
+- **Native DualSense games** (no emulation): currently a regression on the
+  patched instance — the winexinput stack hides the bare `MI_xx` interface
+  such games use (verified: DS:DC works on stock, dead on patched; root
+  cause in ROADMAP backlog, fix = PID-scoped V1). Until fixed: play native
+  DS5 titles on a stock Proton instance.
 
 ## Credits
 
