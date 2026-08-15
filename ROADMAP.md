@@ -34,6 +34,11 @@
 - [ ] SenseShock cross-check (daemon-side blobs comparison; why no BT there)
 - [ ] hex-patches → source .patch files against winexinput/hidclass
       (survives rebuilds, reviewable)
+- [ ] E3 gadget topology (f_hid) — the "honest" alternative to wine-side
+      strings/version patches; revisit if upstream resistance to V1.1/V1.2
+
+## Done
+
 - [x] Native DualSense regression on patched Proton — RESOLVED 2026-08-15:
       V1 (is_gamepad) lifted the winexinput stack over the real DS5,
       replacing the bare `MI_03` interface (which DS:DC opens natively)
@@ -41,11 +46,6 @@
       only (05C4/09CC/0BA0); DualSense stays on the stock path. Verified:
       DS:DC native DualSense + Detroit emulation both work on the same
       patched instance.
-- [ ] E3 gadget topology (f_hid) — the "honest" alternative to wine-side
-      strings/version patches; revisit if upstream resistance to V1.1/V1.2
-
-## Done
-
 - [x] Daemon fixes (name/descriptor/0xA3/touchpad) — [ds4linux PR #3](https://github.com/PalashDalsaniya/ds4linux/pull/3)
 - [x] Gameless verifiers (hidprobe/ditest/hidpaths + verify.sh)
 - [x] Hex-patch recipes documented with safety rules
