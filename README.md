@@ -76,6 +76,8 @@ docs/       SOLUTION.md — the decoded detection chain + full stack rationale
 - [DS4Windows][ds4w] — touchpad layout cross-check.
 - [ds4linux][ds4linux] — the base emulator this fork improves.
 
+Co-developed with GLM-5.2/LLM assistance.
+
 [fork]: https://github.com/NaGGaN-Z/ds4linux
 [pr]: https://github.com/PalashDalsaniya/ds4linux/pull/3
 [vigem]: https://github.com/nefarius/ViGEmBus
