@@ -1,0 +1,31 @@
+# Золотые SHA256 — эталоны с primepc (машина-эталон), сняты 2026-08-17.
+# Источник: GE-Proton11-3-B1 (рабочий инстанс, все патчи live, матрица 4/4).
+# Формат: <sha256>  <target>  <состояние>  <примечание>
+# Потребители: tests (hexpatch golden self-test), Release manifest (T4).
+
+# Драйверы (hex-патчи), обе архи; patched = живой файл, stock = бэкап:
+08789dac6313f8cd21f1a19f9c0d3ace41bb092245eb77f074792c779944391f  x86_64-windows/winexinput.sys  patched  swap IG<->XI
+3cd3049f405d9b8c947ca7439943c521a1820ab1a4d9eefcc98279a8c0b1827c  x86_64-windows/winexinput.sys  stock    (.swbak)
+e01fc9e3698b597cefa894a1d74b6f8f46742c14237900bcbcb13edef2b0dc6a  x86_64-windows/hidclass.sys    patched  GUID 6C53D5FD->FAKE
+9037b6b44a054b14032def4b9123bfd35922c34f7025623acbb75ad472a4f06a  x86_64-windows/hidclass.sys    stock    (.gdbak)
+a138ea46d0a9a28f2d6644eace679228361eddff379a047809ced3959d12f263  i386-windows/winexinput.sys    patched  swap IG<->XI
+e301510cb00663449c9320e65265f2c3a2a92ad3d394b134f2387d63d664f8ff  i386-windows/winexinput.sys    stock    (.swbak)
+8dde0ef2c9df293ca03572be9b179fdab6668a1aedce0834be736bf7c43d8c90  i386-windows/hidclass.sys      patched  GUID 6C53D5FD->FAKE
+f62fbf91ef007ede4c15e009d2a6905d3402db675d7b233e2ad4f599f3fb2ece  i386-windows/hidclass.sys      stock    (.gdbak)
+
+# winebus.so (V1.3, x86_64-unix, GE-Proton11-3):
+282f356068253f90da1c8723db3efa43400e211e864419dc2d3aed0bf811876f  x86_64-unix/winebus.so  deployed  97032 B; артефакт для Releases (T4)
+207ffc14212b8af8424cb98bfa33fa3e9fd23614ea518b60d0a7febda201ad02  x86_64-unix/winebus.so  v12bak    предыдущая итерация
+23018143240560239c791d5199e3db4219f9dba07e67cc7bd98fee1064c0d29c  x86_64-unix/winebus.so  stock     GE-Proton11-3 (.b1bak)
+# ВНИМАНИЕ: "повреждённые" литералы E2-блока в deployed .so
+# ("Sony Computer Enr Entertainment", "Wireless Control"+HID-байты) —
+# легитимный tail-merge компилятора, НЕ порча: чистая пересборка из
+# v13-патча на той же машине воспроизводит их побайтово (2026-08-17,
+# дизасм идентичен, различие только в GNU build-id — он link-time и
+# path-зависим). См. заголовок patches/winebus/v13-sony-gamepad.patch.
+
+# Исходники задеплоенного дерева (контроль применения 0018+0036+v13
+# на wine@9578fa3 — файлы обязаны совпасть побайтово):
+6df70822cff61dfb3747c6c198ceb5d9a7801d8402ba25a5dd5e9e7a00ec7382  wine-src/dlls/winebus.sys/bus_udev.c
+2b40d0050bcd750cd5813f82f9191fced44fd63c51a3b26c2248fd35ab79eb2f  wine-src/dlls/winebus.sys/main.c
+e8ce07951a46545cd4084bcadc0f33550f1483ec8df7434fb150cb43fb7b745d  wine-src/dlls/winebus.sys/bus_sdl.c
