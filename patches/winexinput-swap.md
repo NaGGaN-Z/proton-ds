@@ -15,7 +15,7 @@ descriptor. The swap puts the real descriptor on the IG_00 path and moves
 the synthetic one to XI_00 (where XInput-style consumers of the twin would
 look — and where `hidclass` GUID patch then hides it entirely).
 
-## Recipe (python3, apply to x86_64 + i386 dist copies AND prefix copy)
+## Recipe (python3, apply to x86_64 + i386 dist copies; engine: scripts/hexpatch.py)
 
 ```python
 IG = b"&\x00I\x00G\x00_\x000\x000\x00"   # UTF-16LE "&IG_00"
@@ -37,7 +37,9 @@ open(path, "wb").write(d)
 
 - `<GE>/files/lib/wine/x86_64-windows/winexinput.sys`
 - `<GE>/files/lib/wine/i386-windows/winexinput.sys`
-- **game prefix**: `<compatdata/<appid>/pfx/drive_c/windows/system32/drivers/winexinput.sys`
-  — the prefix copy is what actually loads; patching only the dist is NOT enough.
 
-Rollback: `mv winexinput.sys.swbak winexinput.sys` (all three locations).
+NOTE: game-prefix copies are NOT patched — wineboot propagates the driver
+from the dist of the instance a game runs on (hash-audited 2026-08-17:
+BG3/DS:DC prefix copies became patched automatically after launching on
+the -DS instance, Witcher stayed stock after running on stock). A prefix
+refreshes on the first launch on the new instance.
