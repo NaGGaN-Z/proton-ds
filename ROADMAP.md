@@ -2,20 +2,31 @@
 
 ## v0.1 — Reproducible install (core milestone)
 
-- [ ] `setup.sh`: apply the winebus patch
-  - [ ] build path: clone wine (GE-pinned commit) + GE patches + V1-V1.2 → module-only build
-  - [ ] prebuilt path: fetch `winebus.so` from Releases (CI artifact matrix)
-- [ ] `setup.sh`: hex-patches (winexinput swap ×3 targets incl. prefix copy,
-      hidclass GUID ×2 dist copies) with occurrence-count asserts
-- [ ] `setup.sh`: daemon + ds4ctl install from the ds4linux fork
-- [ ] `uninstall.sh`: full rollback from `.swbak/.gdbak/.b1bak` backups
-- [ ] verify.sh wired into setup as the final gate (ALL GREEN or abort+rollback)
+- [x] `setup.sh`: apply the winebus patch
+  - [x] build path: clone wine (GE-pinned commit) + GE patches 0018/0036 +
+        V1.3 → pregeneration (make_vulkan/specfiles/requests) → module-only
+        build (byte-exact vs deployed, modulo build-id)
+  - [x] prebuilt path: fetch `winebus.so` from Releases (sha256 + size
+        gate; single GE-Proton11-3 artifact in v0.1)
+- [x] `setup.sh`: hex-patches (winexinput swap ×2 dist copies, hidclass
+      GUID ×2 dist copies) with occurrence-count asserts + idempotency;
+      prefix copies excluded (wineboot propagates from the dist —
+      hash-audited)
+- [x] `setup.sh`: daemon + ds4ctl install from the ds4linux fork
+      (cmake+Ninja, one-time .pdsbak backups, not auto-started)
+- [x] `uninstall.sh`: manifest-driven removal, system restore from
+      .pdsbak, cache purge option
+- [x] verify.sh wired into setup as the final gate (ALL GREEN or
+      auto-rollback; no-daemon degrades to verified=false)
 - [ ] Smoke-test on a clean second machine (the 4/4 matrix re-run)
+      — primepc E2E install/uninstall green 2026-08-17; game matrix
+      re-run pending
 
 ## v0.2 — Version matrix & CI
 
 - [ ] GitHub Actions: build winebus.so for a matrix of GE-Proton versions
 - [ ] Auto-detect GE version → pick matching prebuilt (or warn+build)
+  (v0.1 has the manifest plumbing: instance-name keyed releases)
 - [ ] Optional upstream contribution: descriptor-based hidraw gamepad
       classification (a NEW design, not our VID/PID patch — the allowlist
       is product policy, see docs/SOLUTION.md upstream posture). Only if
@@ -42,6 +53,13 @@
       effort, currently unnecessary — a cleanup, not an enabler
 
 ## Done
+
+- [x] v0.1 install pipeline (setup.sh/uninstall.sh, hexpatch engine,
+      golden-hash self-test) — E2E green on the reference machine
+      2026-08-17: instance model, winebus prebuilt+build paths, driver
+      hex-patches (4/4 hashes == deployed goldens), daemon+ds4ctl,
+      verify gate ALL GREEN with a live DualSense, uninstall restores
+      pre-install state.
 
 - [x] Native DualSense regression on patched Proton — RESOLVED 2026-08-15:
       V1 (is_gamepad) lifted the winexinput stack over the real DS5,

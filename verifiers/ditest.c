@@ -1,6 +1,9 @@
+#define DIRECTINPUT_VERSION 0x0800
+#include <windows.h>
+#include <dinput.h>
+#include <xinput.h>
 #include <setupapi.h>
 #include <hidsdi.h>
-#include <windows.h>
 #include <stdio.h>
 static BOOL CALLBACK cb(LPCDIDEVICEINSTANCEW d, void *ctx) {
     printf("DINPUT: name=%ls product=%ls type=%04X instance=%08X\n",

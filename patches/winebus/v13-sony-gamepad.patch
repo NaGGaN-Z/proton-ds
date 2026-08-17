@@ -1,0 +1,121 @@
+proton-ds: winebus V1.3 — Sony-gamepad scoping (DS4 is_gamepad + DualSense SDL-ignore + XINPUT compat removal)
+
+Применяется ПОВЕРХ: ValveSoftware/wine@9578fa3 + ge/0018 + ge/0036
+(порядок: 0018 -> 0036 -> этот патч). ge/0014 НЕ применяется — см. ge/README.md.
+
+Состав (сверка побайтовая: sha256 bus_udev.c / main.c / bus_sdl.c после
+применения совпадают с задеплоенным деревом primepc 2026-08-15,
+GE-Proton11-3-B1, игровая матрица 4/4):
+
+- bus_udev.c (hidraw_device_create):
+  * V1.3 — desc.is_gamepad = TRUE только для DualShock 4
+    (054c:05c4/09cc/0ba0). Безусловный is_gamepad поднимает
+    winexinput-стек над реальным DualSense и прячет голый MI_xx
+    интерфейс, который открывают нативные DS5-игры (DS:DC на стоке
+    работает, с is_gamepad=1 — умирает).
+  * V1.1 (ds4-strings-fix E2) — Windows-корректные строки
+    manufacturer/product для DS4 (без фикса: manufacturer "hidraw",
+    product = полный kernel HID_NAME); нормализация MAC-serial без
+    двоеточий.
+  * V1.2 — desc.version = 0x0100, если устройство не отдало версию.
+- bus_sdl.c (sdl_add_device): SDL-источник игнорирует DualSense —
+  нативные репорты обрабатывает hidraw-путь. Блок извлечён из GE 0014:
+  полный 0014 не применяется на Valve base (нет is_emulating_steaminput),
+  его main.c-часть (DualSense haptics) в деплой не входила.
+- main.c (get_compatible_ids): больше не экспортирует
+  WINEBUS\WINE_COMP_XINPUT для gamepad — половина IG<->XI схемы
+  (вторая половина — hex-swap "&IG_00"<->"&XI_00" в winexinput.sys).
+
+НОТА РАЗВЁРТКИ (обновлено 2026-08-17 после чистой пересборки): в
+задеплоенном .so литералы E2-блока выглядят «повреждёнными»
+("Sony Computer Enr Entertainment", "Wireless Control"+HID-байты).
+Чистая пересборка из ЭТОГО патча на той же машине воспроизводит те же
+строки и размер 97032 B побайтово (дизасм идентичен деплою) — это
+легитимный tail-merge строк компилятором, НЕ порча. Игровые матрицы
+это не касается: строки ограничены sizeof, игры идут через
+эмулируемый DS4.
+
+diff --git a/dlls/winebus.sys/bus_sdl.c b/dlls/winebus.sys/bus_sdl.c
+index fbea0cb..2056e43 100644
+--- a/dlls/winebus.sys/bus_sdl.c
++++ b/dlls/winebus.sys/bus_sdl.c
+@@ -1000,6 +1000,14 @@ static void sdl_add_device(unsigned int index)
+         return;
+     }
+ 
++    if (is_dualsense_gamepad(desc.vid, desc.pid))
++    {
++        TRACE("ignoring SDL DualSense device %s; hidraw handles native reports.\n", debugstr_device_desc(&desc));
++        if (controller) pSDL_GameControllerClose(controller);
++        pSDL_JoystickClose(joystick);
++        return;
++    }
++
+     if (pSDL_JoystickGetSerial && (sdl_serial = pSDL_JoystickGetSerial(joystick)))
+         ntdll_umbstowcs(sdl_serial, strlen(sdl_serial) + 1, desc.serialnumber, ARRAY_SIZE(desc.serialnumber));
+ 
+diff --git a/dlls/winebus.sys/bus_udev.c b/dlls/winebus.sys/bus_udev.c
+index d4643a4..1c20324 100644
+--- a/dlls/winebus.sys/bus_udev.c
++++ b/dlls/winebus.sys/bus_udev.c
+@@ -1514,11 +1514,38 @@ static NTSTATUS hidraw_device_create(struct udev_device *dev, int fd, const char
+     char buffer[MAX_PATH];
+ 
+     desc.is_hidraw = TRUE;
++    /* DS4 only (05c4/09cc/0ba0): lifting the winexinput stack over a real
++       DualSense hides the bare MI_xx interface that native DS5-aware games
++       open (verified: DS:DC works on stock, dead with is_gamepad=1). */
++    if (is_dualshock4_gamepad(desc.vid, desc.pid))
++        desc.is_gamepad = TRUE;
+     if (!desc.product[0] && ioctl(fd, HIDIOCGRAWNAME(sizeof(buffer) - 1), buffer) >= 0)
+         ntdll_umbstowcs(buffer, strlen(buffer) + 1, desc.product, ARRAY_SIZE(desc.product));
+ 
+     if (!desc.manufacturer[0]) memcpy(desc.manufacturer, hidraw, sizeof(hidraw));
+     if (!desc.serialnumber[0]) memcpy(desc.serialnumber, zeros, sizeof(zeros));
++    /* ds4-strings-fix E2: Windows-correct strings for DualShock 4. Games like
++       Detroit probe manufacturer+product pairs; parentless UHID devices give
++       manufacturer "hidraw" and product = full kernel HID_NAME instead. */
++    if (is_dualshock4_gamepad(desc.vid, desc.pid))
++    {
++        char manufacturer_str[] = "Sony Computer Entertainment";
++        char product_str[] = "Wireless Controller";
++        WCHAR *src, *dst;
++
++        ntdll_umbstowcs(manufacturer_str, sizeof(manufacturer_str),
++                        desc.manufacturer, ARRAY_SIZE(desc.manufacturer));
++        ntdll_umbstowcs(product_str, sizeof(product_str),
++                        desc.product, ARRAY_SIZE(desc.product));
++        if (desc.serialnumber[0])  /* normalize MAC: strip colons (Windows format) */
++        {
++            for (src = dst = desc.serialnumber; *src; src++)
++                if (*src != ':') *dst++ = *src;
++            *dst = 0;
++        }
++            if (!desc.version) desc.version = 0x0100;
++    }
++
+ 
+     if (!(impl = raw_device_create(&hidraw_device_vtbl, sizeof(struct hidraw_device))))
+         return STATUS_NO_MEMORY;
+diff --git a/dlls/winebus.sys/main.c b/dlls/winebus.sys/main.c
+index 4bc9671..32d14bd 100644
+--- a/dlls/winebus.sys/main.c
++++ b/dlls/winebus.sys/main.c
+@@ -260,17 +260,11 @@ static WCHAR *get_hardware_ids(DEVICE_OBJECT *device)
+ 
+ static WCHAR *get_compatible_ids(DEVICE_OBJECT *device)
+ {
+-    static const WCHAR xinput_compat[] = L"WINEBUS\\WINE_COMP_XINPUT";
+     static const WCHAR hid_compat[] = L"WINEBUS\\WINE_COMP_HID";
+-    struct device_extension *ext = (struct device_extension *)device->DeviceExtension;
+     DWORD size = sizeof(hid_compat);
+     WCHAR *dst;
+-
+-    if (ext->desc.is_gamepad) size += sizeof(xinput_compat);
+-
+     if ((dst = ExAllocatePool(PagedPool, size + sizeof(WCHAR))))
+     {
+-        if (ext->desc.is_gamepad) memcpy(dst, xinput_compat, sizeof(xinput_compat));
+         memcpy((char *)dst + size - sizeof(hid_compat), hid_compat, sizeof(hid_compat));
+         dst[size / sizeof(WCHAR)] = 0;
+     }

@@ -28,9 +28,10 @@ user action is selecting the patched Proton instance for a game.
    (version 0x3100 @ +0x23 — strict games gate on > 0x30FF), battery
    bytes, full touchpad translation. Source: [NaGGaN-Z/ds4linux][fork],
    branch `proton-compat` ([PR #3][pr]).
-3. **winebus.so patch** (V1/V1.1/V1.2, ~20 lines in `bus_udev.c`) —
-   hidraw gamepad classification for Sony VID/PID + Windows-correct
-   strings + version 0x0100.
+3. **winebus.so patch** (V1/V1.1/V1.2/V1.3 in `bus_udev.c` + a
+   `main.c`/`bus_sdl.c` tweak) — hidraw gamepad classification for DS4
+   PIDs only + Windows-correct strings + version 0x0100; DualSense stays
+   on the native path.
 4. **winexinput.sys IG_00↔XI_00 swap** (data hex-patch) — puts the REAL
    descriptor on the IG_00 interface path (what libScePad opens and the
    WMI `IG_` gate matches).
@@ -41,28 +42,60 @@ user action is selecting the patched Proton instance for a game.
 Full engineering story (detection-chain decode, why each piece exists,
 rollback inventory): `docs/SOLUTION.md`.
 
-## Install (skeleton state — the script is being filled in)
+## Install
 
 ```bash
 git clone https://github.com/NaGGaN-Z/proton-ds
 cd proton-ds
-sudo ./scripts/setup.sh          # detect GE → patch → verify
+./scripts/setup.sh
 ```
 
-`setup.sh` pipeline (current skeleton implements detection + verification;
-patch application lands next):
-1. Detect installed GE-Proton versions under `~/.local/share/Steam/compatibilitytools.d/`
-2. Build or fetch prebuilt patched `winebus.so` for the target version
-3. Apply the two data hex-patches (with occurrence-count verification)
-4. Install the daemon + `ds4ctl` from the [fork][fork]
-5. Run the gameless verifiers (`verifiers/`) — all green = done
+`setup.sh` works on the **instance model**: it lists every Proton instance
+in `~/.local/share/Steam/compatibilitytools.d/`, you pick one, it makes a
+`<name>-DS` copy and patches **only the copy** (the stock instance is
+never touched; prefixes are never touched — wineboot propagates driver
+copies from the dist of the instance a game runs on):
+
+1. Instance scan → selection → `cp -a` to `<name>-DS` (disk-space check,
+   safe-abort cleanup on any failure)
+2. **winebus**: prebuilt `.so` from Releases (sha256-gated) when your
+   instance has one; otherwise it offers a source build
+   (wine@9578fa3 + GE patches 0018/0036 + V1.3 patch; needs gcc,
+   autoconf, bison, flex; module-only, ~10-30 min)
+3. **Driver hex-patches** in the copy: winexinput IG_00↔XI_00 swap ×2,
+   hidclass GUID ×2 — occurrence-count asserts, backups next to each file,
+   idempotent (already-patched → skip)
+4. **Daemon + ds4ctl** (sudo): builds the [fork][fork] daemon, one-time
+   `.pdsbak` backups of any existing binaries, installs. The daemon is
+   NOT auto-started — lifecycle is yours (`sudo ds4ctl start|stop|status`)
+5. **Verify gate**: gameless verifiers in a throwaway prefix — ALL GREEN
+   (needs a connected DualSense + running daemon; without them setup
+   degrades to `verified=false` instead of failing). FAIL → automatic
+   rollback of the -DS copy.
+
+Flags: `--instance NAME`, `--dry-run` (full plan, zero changes),
+`--force`, `--with-build` (prefer the source build), `--skip-verify`.
+
+## Uninstall
+
+```bash
+./scripts/uninstall.sh            # pick a -DS instance, removes it
+./scripts/uninstall.sh --all --system --purge-cache
+```
+
+Manifest-driven (`proton-ds.json` inside each -DS instance). `--system`
+stops the daemon and restores daemon/ds4ctl from the `.pdsbak` backups
+(or removes them when absent). Note: uninstalling does not touch a
+running session — stop the daemon before launching games on the stock
+instance.
 
 ## Layout
 
 ```
-scripts/    setup.sh (install), uninstall.sh
-patches/    winebus source patch; hex-patch recipes (winexinput swap, hidclass GUID)
+scripts/    setup.sh / uninstall.sh (install pipeline), hexpatch.py (hex engine), ds4ctl
+patches/    winebus source patches (v13 + ge/); hex-patch recipes (winexinput swap, hidclass GUID)
 verifiers/  hidpaths / hidprobe / ditest (winegcc tools, no game needed)
+tests/      golden hashes + stock fixtures (hexpatch self-test)
 docs/       SOLUTION.md — the decoded detection chain + full stack rationale
 ```
 
@@ -78,11 +111,11 @@ docs/       SOLUTION.md — the decoded detection chain + full stack rationale
   Proton instance for such games.
 - Stock Proton + daemon only = pad not visible (empirically verified,
   see PR #3 discussion).
-- **Native DualSense games** (no emulation): currently a regression on the
-  patched instance — the winexinput stack hides the bare `MI_xx` interface
-  such games use (verified: DS:DC works on stock, dead on patched; root
-  cause in ROADMAP backlog, fix = PID-scoped V1). Until fixed: play native
-  DS5 titles on a stock Proton instance.
+- **Native DualSense works on the -DS instance** (V1.3 PID-scoping): the
+  winebus patch lifts the winexinput stack only over DS4-family PIDs
+  (05C4/09CC/0BA0); a real DualSense stays on the stock passthrough path.
+  Verified: DS:DC native DualSense + Detroit DS4 emulation on the same
+  patched instance — the -DS instance is universal.
 
 ## Credits
 

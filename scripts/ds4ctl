@@ -1,0 +1,324 @@
+#!/usr/bin/env bash
+# ds4ctl — wrapper для ds4linux-daemon.
+# Команды: start | stop | restart | status | log
+#
+# Дополнительно:
+# - При start закрывает доступ к hidraw real DualSense (chmod 000), чтобы wine
+#   не видел конфликтующее устройство. Список скрытых hidraw — в /run/ds4ctl-hidden.
+# - При stop восстанавливает права через udevadm trigger (восстанавливает ACL).
+# - PID-файл: /run/ds4linux-daemon.pid
+# - Лог:      /var/log/ds4linux-daemon.log
+#
+# Почему вообще прятать real DualSense:
+#   ds4linux делает EVIOCGRAB на event-side, но /dev/hidraw для real DualSense
+#   остаётся доступен wine. Wine видит ДВА устройства (real + virtual) и игры
+#   могут выбрать real (который не отдаёт ввод). chmod 000 принудительно
+#   закрывает real hidraw от wine, остаётся только virtual DS4.
+
+set -uo pipefail
+
+DAEMON=/usr/bin/ds4linux-daemon
+PIDFILE=/run/ds4linux-daemon.pid
+HIDDEN_LIST=/run/ds4ctl-hidden-hidraw
+LOGFILE=/var/log/ds4linux-daemon.log
+STARTUP_WAIT=3        # секунд на создание virtual DS4
+SIGTERM_GRACE=2       # секунд ждать после SIGTERM перед SIGKILL
+
+# DualSense (real) VID:PID — то, что прячем
+REAL_VENDOR=054c
+REAL_PRODUCT=0ce6
+
+c_ok()   { printf '\033[32m%s\033[0m\n' "$*"; }
+c_warn() { printf '\033[33m%s\033[0m\n' "$*" >&2; }
+c_err()  { printf '\033[31m%s\033[0m\n' "$*" >&2; }
+
+is_running() {
+    [[ -f "$PIDFILE" ]] || return 1
+    local pid
+    pid="$(cat "$PIDFILE" 2>/dev/null)" || return 1
+    [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null
+}
+
+find_stray_pids() {
+    # Исключает PID из PIDFILE
+    local main_pid=""
+    [[ -f "$PIDFILE" ]] && main_pid=$(cat "$PIDFILE" 2>/dev/null)
+    pgrep -f "$DAEMON" 2>/dev/null | grep -v "^${main_pid}$" || true
+}
+
+find_real_dualsense_hidraw() {
+    # Ищем /dev/hidrawN для real DualSense (054C:0CE6) через sysfs uevent.
+    # HID_ID формат: BUSTYPE:VENDOR:PRODUCT, всё zero-padded по 8 hex-цифр.
+    # 4 leading zeros + 4-char VID/PID = 8 chars total (0000054C, 00000CE6).
+    local uevt n
+    for uevt in /sys/class/hidraw/hidraw*/device/uevent; do
+        [[ -r "$uevt" ]] || continue
+        if grep -qiE "HID_ID=[0-9a-f]+:0000${REAL_VENDOR}:0000${REAL_PRODUCT}" "$uevt" 2>/dev/null; then
+            n=$(echo "$uevt" | sed -E 's|.*/hidraw([0-9]+)/device/uevent|\1|')
+            echo "/dev/hidraw$n"
+        fi
+    done
+}
+
+hide_real_dualsense() {
+    local hidden=()
+    local dev
+    while IFS= read -r dev; do
+        [[ -e "$dev" ]] || continue
+        if chmod 000 "$dev" 2>/dev/null; then
+            hidden+=("$dev")
+        fi
+    done < <(find_real_dualsense_hidraw)
+    if [[ -n "${hidden[*]:-}" ]]; then
+        printf '%s\n' "${hidden[@]}" > "$HIDDEN_LIST"
+        chmod 640 "$HIDDEN_LIST"
+    else
+        c_warn "WARN: no real DualSense hidraw found — nothing to hide."
+        c_warn "     (is DualSense actually connected?)"
+    fi
+}
+
+restore_real_dualsense() {
+    if [[ ! -f "$HIDDEN_LIST" ]]; then
+        return 0
+    fi
+
+    local dev
+    while IFS= read -r dev; do
+        [[ -e "$dev" ]] || continue
+        # Восстановить базовые права
+        chmod 660 "$dev" 2>/dev/null || true
+        chown root:input "$dev" 2>/dev/null || true
+    done < "$HIDDEN_LIST"
+
+    # udevadm trigger для восстановления ACL (uaccess tag от logind и т.п.)
+    local uevt syspath n
+    for uevt in /sys/class/hidraw/hidraw*/device/uevent; do
+        [[ -r "$uevt" ]] || continue
+        if grep -qiE "HID_ID=[0-9a-f]+:0000${REAL_VENDOR}:0000${REAL_PRODUCT}" "$uevt" 2>/dev/null; then
+            syspath=$(dirname "$uevt")
+            udevadm trigger --action=add "$syspath" 2>/dev/null || true
+        fi
+    done
+
+    rm -f "$HIDDEN_LIST"
+}
+
+cmd_start() {
+    if is_running; then
+        c_warn "Already running (PID $(cat "$PIDFILE"))"
+        return 0
+    fi
+
+    # Левые процессы (например, зависшие --version/--help)
+    local stray
+    stray="$(find_stray_pids)"
+    if [[ -n "$stray" ]]; then
+        c_warn "Stray ds4linux-daemon processes found: $stray"
+        c_warn "Killing them first..."
+        for p in $stray; do
+            kill -9 "$p" 2>/dev/null || true
+        done
+        sleep 1
+    fi
+
+    # Если прошлый запуск оставил HIDDEN_LIST (упал без stop) — восстановить
+    if [[ -f "$HIDDEN_LIST" ]]; then
+        c_warn "Stale hidden hidraw list found, restoring first..."
+        restore_real_dualsense
+    fi
+
+    # Steam должен быть выключен
+    if pgrep -x steam >/dev/null 2>&1; then
+        c_warn "Steam is running. ds4linux should start BEFORE Steam,"
+        c_warn "otherwise Steam will grab raw DualSense first."
+        read -r -p "Continue anyway? [y/N] " ans
+        case "${ans,,}" in
+            y|yes) ;;
+            *) echo "Aborted."; return 1 ;;
+        esac
+    fi
+
+    # uinput должен быть загружен
+    if ! lsmod | grep -q '^uinput'; then
+        modprobe uinput 2>/dev/null || {
+            c_err "Failed to load uinput module"
+            return 1
+        }
+    fi
+
+    : > "$LOGFILE"
+    chmod 640 "$LOGFILE"
+
+    echo "Starting ds4linux-daemon (logging to $LOGFILE)..."
+    setsid "$DAEMON" >"$LOGFILE" 2>&1 &
+    local pid=$!
+    echo "$pid" > "$PIDFILE"
+    chmod 640 "$PIDFILE"
+
+    sleep "$STARTUP_WAIT"
+
+    if ! kill -0 "$pid" 2>/dev/null; then
+        c_err "FAILED: process exited early. Last log:"
+        tail -30 "$LOGFILE" >&2
+        rm -f "$PIDFILE"
+        return 1
+    fi
+
+    c_ok "Started (PID $pid)"
+
+    # Проверить, что virtual DS4 создался
+    if grep -q "DS4Linux Virtual DS4" /proc/bus/input/devices 2>/dev/null; then
+        c_ok "Virtual DS4 created"
+    else
+        c_warn "Virtual DS4 not yet visible (still warming up?)."
+        c_warn "Check: sudo ds4ctl log   or   sudo ds4ctl status"
+    fi
+
+    # Скрыть real DualSense от winebus (главное нововведение)
+    hide_real_dualsense
+    if [[ -f "$HIDDEN_LIST" ]]; then
+        local cnt
+        cnt=$(wc -l < "$HIDDEN_LIST")
+        c_ok "Hidden real DualSense hidraw ($cnt device(s)) from winebus"
+    fi
+}
+
+cmd_stop() {
+    local pid=""
+    if [[ -f "$PIDFILE" ]]; then
+        pid="$(cat "$PIDFILE" 2>/dev/null)"
+    fi
+    if [[ -z "$pid" ]]; then
+        pid="$(pgrep -f "$DAEMON" | head -n1)"
+    fi
+
+    if [[ -z "$pid" ]]; then
+        echo "Not running."
+    else
+        if kill -0 "$pid" 2>/dev/null; then
+            echo "Stopping PID $pid (SIGTERM)..."
+            kill "$pid" 2>/dev/null || true
+
+            local i
+            for ((i = 0; i < SIGTERM_GRACE * 2; i++)); do
+                kill -0 "$pid" 2>/dev/null || break
+                sleep 0.5
+            done
+
+            if kill -0 "$pid" 2>/dev/null; then
+                c_warn "SIGTERM ignored, sending SIGKILL..."
+                kill -9 "$pid" 2>/dev/null || true
+                sleep 1
+            fi
+
+            if kill -0 "$pid" 2>/dev/null; then
+                c_err "FAILED: PID $pid still alive after SIGKILL (zombie?)"
+                return 1
+            fi
+        else
+            echo "PID $pid not alive (stale PIDFILE)."
+        fi
+        rm -f "$PIDFILE"
+    fi
+
+    # Подчистить возможные дочерние процессы
+    local pids
+    pids="$(find_stray_pids)"
+    if [[ -n "$pids" ]]; then
+        c_warn "Cleaning up stray processes: $pids"
+        for p in $pids; do
+            kill -9 "$p" 2>/dev/null || true
+        done
+    fi
+
+    # Восстановить hidraw real DualSense
+    if [[ -f "$HIDDEN_LIST" ]]; then
+        restore_real_dualsense
+        c_ok "Restored real DualSense hidraw access"
+    fi
+
+    c_ok "Stopped."
+}
+
+cmd_status() {
+    if is_running; then
+        c_ok "RUNNING (PID $(cat "$PIDFILE"))"
+    else
+        echo "NOT RUNNING"
+    fi
+
+    local stray
+    stray="$(find_stray_pids)"
+    if [[ -n "$stray" ]]; then
+        c_warn "Stray processes (not in PIDFILE): $stray"
+    fi
+
+    echo "--- virtual DS4 devices ---"
+    local vdev
+    vdev="$(grep -E "DS4Linux|Virtual DS4" /proc/bus/input/devices 2>/dev/null)"
+    if [[ -n "$vdev" ]]; then
+        echo "$vdev"
+    else
+        echo "(no virtual DS4 devices)"
+    fi
+
+    echo "--- real DualSense hidraw ---"
+    if [[ -f "$HIDDEN_LIST" ]]; then
+        c_warn "Hidden from winebus:"
+        cat "$HIDDEN_LIST" | sed 's/^/  /'
+    else
+        find_real_dualsense_hidraw | sed 's/^/visible: /'
+        [[ -z "$(find_real_dualsense_hidraw)" ]] && echo "  (DualSense not connected)"
+    fi
+
+    echo "--- Steam state ---"
+    if pgrep -x steam >/dev/null 2>&1; then
+        c_warn "Steam is running"
+    else
+        echo "Steam: not running"
+    fi
+}
+
+cmd_log() {
+    if [[ -f "$LOGFILE" ]]; then
+        tail -n "${1:-50}" "$LOGFILE"
+    else
+        echo "No log file yet ($LOGFILE)"
+        return 1
+    fi
+}
+
+usage() {
+    cat <<'USAGE'
+ds4ctl — wrapper for ds4linux-daemon
+
+Usage:
+  sudo ds4ctl start           Start daemon + hide real DualSense hidraw
+  sudo ds4ctl stop            Stop daemon + restore hidraw access
+  sudo ds4ctl restart         Stop + start
+  sudo ds4ctl status          Show daemon, virtual devices, hidden hidraw, Steam
+  sudo ds4ctl log [N]         Tail last N lines of daemon log (default 50)
+
+What this wrapper does on top of ds4linux-daemon:
+  1. Hides real DualSense /dev/hidraw* from winebus (chmod 000) so wine/Proton
+     see only the virtual DS4. This fixes the "gamepad visible but no input"
+     problem when wine picks real DualSense (EVIOCGRAB-locked by daemon).
+  2. SIGTERM-then-SIGKILL on stop (daemon ignores SIGTERM).
+  3. Cleans up stray processes from --help/--version misuse.
+  4. Verifies virtual DS4 was actually created after start.
+  5. Restores hidraw access on stop via udevadm trigger.
+
+Requires root (for /usr/bin/ds4linux-daemon + uinput + chmod hidraw).
+USAGE
+}
+
+case "${1:-}" in
+    start)   cmd_start ;;
+    stop)    cmd_stop ;;
+    restart) cmd_stop; cmd_start ;;
+    status)  cmd_status ;;
+    log)     shift; cmd_log "${1:-}" ;;
+    -h|--help|help) usage ;;
+    *)       usage; exit 64 ;;
+esac
