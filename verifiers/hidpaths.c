@@ -1,4 +1,6 @@
 #include <windows.h>
+#include <setupapi.h>
+#include <hidsdi.h>
 #include <stdio.h>
 int main() {
     GUID hidGuid; HidD_GetHidGuid(&hidGuid);

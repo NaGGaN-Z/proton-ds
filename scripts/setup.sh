@@ -263,6 +263,7 @@ PYEOF
 deploy_winebus() {
     step "winebus: prebuilt path ($RELEASE_BASE)"
     local target="$DS_DIR/$WINEBUS_REL_X64"
+    local log="$CACHE_DIR/$BUILD_LOG_NAME"
     if [[ $DRY_RUN -eq 0 ]]; then
         [[ -f "$target" ]] || die "the copy has no $WINEBUS_REL_X64
   the dist structure is unexpected for this instance
@@ -390,7 +391,6 @@ PYEOF
 build_winebus() {
     step "winebus: source-build path (wine@$WINE_COMMIT + ge patches + v13)"
     local src="$CACHE_DIR/wine-src" bld="$CACHE_DIR/wine-build64"
-    local log="$CACHE_DIR/$BUILD_LOG_NAME"
 
     # deps
     step "build deps check"
@@ -571,14 +571,250 @@ build_winebus() {
 
 deploy_winebus
 
-# ── Phase 3: driver hex-patches (T6) ─────────────────────────────────────────
-step "driver hex-patches (not implemented at this plan step yet)"
+# ── Phase 3: driver hex-patches ──────────────────────────────────────────────
+patch_drivers() {
+    step "driver hex-patches: winexinput (swap) x2, hidclass (guid) x2"
+    local hexpy="$SCRIPT_DIR/hexpatch.py"
+    [[ -f "$hexpy" ]] || die "hexpatch.py not found at $hexpy
+  what to do: this is a broken proton-ds installation — clone the repo fully"
 
-# ── Phase 4: daemon + ds4ctl (T7) ────────────────────────────────────────────
-step "daemon/ds4ctl (not implemented at this plan step yet)"
+    local targets=(
+        "x86_64-windows/winexinput.sys:swap"
+        "i386-windows/winexinput.sys:swap"
+        "x86_64-windows/hidclass.sys:guid"
+        "i386-windows/hidclass.sys:guid"
+    )
+    local rel kind f rc patched=0 skipped=0
+    for entry in "${targets[@]}"; do
+        rel="${entry%%:*}"; kind="${entry##*:}"
+        f="$DS_DIR/files/lib/wine/$rel"
+        if [[ $DRY_RUN -eq 1 ]]; then
+            say "[dry-run] hexpatch.py check + $kind $f"
+            continue
+        fi
+        [[ -f "$f" ]] || die "driver file missing in the -DS copy: $f
+  the dist structure is unexpected for this instance
+  what to do: report this (instance name + Proton version)"
+        # idempotency: check state first
+        set +e
+        python3 "$hexpy" check "$f" --kind "$kind" >/dev/null 2>&1
+        rc=$?
+        set -e
+        if [[ $rc -eq 10 ]]; then
+            warn "already patched: $rel (skipping)"
+            skipped=$((skipped+1))
+            manifest_set "drivers.$(basename "$f").$kind" '"patched-before"'
+            continue
+        elif [[ $rc -eq 11 ]]; then
+            die "driver state unclassifiable: $rel
+  the hexpatch output above explains what it found
+  likely cause: this driver binary is not compatible with proton-ds (different GE/Wine version)
+  what to do: try a different Proton instance, or report the case (instance name + Proton version)
+  safe abort: the -DS copy will be removed; the stock instance is untouched"
+        fi
+        say "patching ($kind): $rel"
+        if ! python3 "$hexpy" "$kind" "$f"; then
+            die "hex-patch failed for $rel
+  the hexpatch error above includes the likely cause and details
+  safe abort: the -DS copy will be removed; the stock instance is untouched"
+        fi
+        # post-check
+        set +e
+        python3 "$hexpy" check "$f" --kind "$kind" >/dev/null 2>&1
+        rc=$?
+        set -e
+        [[ $rc -eq 10 ]] || die "post-patch verification failed for $rel (check exit $rc, expected patched)
+  this is a proton-ds bug — please report it
+  safe abort: the -DS copy will be removed"
+        local h
+        h="$(sha256sum "$f" | cut -d' ' -f1)"
+        say "patched: $rel (sha256 $h)"
+        manifest_set "drivers.$(basename "$f").$kind" "\"$h\""
+        patched=$((patched+1))
+    done
+    if [[ $DRY_RUN -eq 0 ]]; then
+        say "hex-patches: $patched applied, $skipped skipped (already patched)"
+        manifest_add_step "\"drivers: hex-patched (winexinput swap x2, hidclass guid x2; $patched applied, $skipped skipped)\""
+    fi
+}
 
-# ── Phase 5: verify gate (T8) ────────────────────────────────────────────────
-step "verify gate (not implemented at this plan step yet)"
+patch_drivers
+
+# ── Phase 4: daemon + ds4ctl (sudo block) ────────────────────────────────────
+DS4LINUX_REPO="https://github.com/NaGGaN-Z/ds4linux"
+DS4LINUX_BRANCH="proton-compat"
+DAEMON_DST="/usr/bin/ds4linux-daemon"
+DS4CTL_DST="/usr/local/bin/ds4ctl"
+
+sudo_run() {
+    if [[ $DRY_RUN -eq 1 ]]; then
+        say "[sudo] $*"
+    else
+        sudo "$@"
+    fi
+}
+
+install_system() {
+    step "daemon + ds4ctl (system install, sudo)"
+    local repo="$CACHE_DIR/ds4linux"
+    local log="$CACHE_DIR/$BUILD_LOG_NAME"
+
+    # deps
+    local missing=""
+    for c in cmake ninja g++; do
+        command -v "$c" >/dev/null 2>&1 || missing="$missing $c"
+    done
+    if [[ -n "$missing" ]]; then
+        die "daemon build deps missing:$missing
+  install the packages that provide them (Arch: sudo pacman -S$missing;
+  Debian/Ubuntu: sudo apt install$(echo "$missing" | sed 's/g++/g++ cmake ninja-build/'))
+  then re-run setup
+  note: the daemon is REQUIRED for DS4 emulation (the virtual controller);
+  without it setup cannot finish"
+    fi
+    say "daemon build deps: ok"
+
+    # clone
+    step "cloning ds4linux (fork, branch $DS4LINUX_BRANCH)"
+    if [[ -d "$repo/.git" ]]; then
+        say "repo already present: $repo (reusing)"
+    else
+        if [[ $DRY_RUN -eq 1 ]]; then
+            say "[dry-run] git clone -b $DS4LINUX_BRANCH $DS4LINUX_REPO $repo"
+        else
+            mkdir -p "$CACHE_DIR"
+            if ! git clone -b "$DS4LINUX_BRANCH" "$DS4LINUX_REPO" "$repo" >>"$log" 2>&1; then
+                die "failed to clone $DS4LINUX_REPO (branch $DS4LINUX_BRANCH)
+  likely cause: network problem
+  what to do: check the connection and re-run setup"
+            fi
+            say "clone done: $(git -C "$repo" log --oneline -1)"
+        fi
+    fi
+
+    # build
+    step "building daemon (cmake + ninja)"
+    local daemon_bin="$repo/build/daemon/ds4linux-daemon"
+    if [[ -f "$daemon_bin" ]]; then
+        say "daemon binary already built: $daemon_bin (reusing)"
+    elif [[ $DRY_RUN -eq 1 ]]; then
+        say "[dry-run] cmake -S $repo -B $repo/build -G Ninja && ninja -C $repo/build"
+    else
+        if ! cmake -S "$repo" -B "$repo/build" -G Ninja >>"$log" 2>&1 \
+           || ! ninja -C "$repo/build" >>"$log" 2>&1; then
+            die "daemon build failed (details: $log)
+  what to do: fix the toolchain issue and re-run setup"
+        fi
+        [[ -f "$daemon_bin" ]] || die "build finished but $daemon_bin not found — this is a proton-ds bug, please report it"
+        say "daemon built: $daemon_bin"
+    fi
+
+    # install with one-time backups
+    step "installing daemon and ds4ctl (sudo)"
+    if [[ -e "$DAEMON_DST" && ! -e "$DAEMON_DST.pdsbak" ]]; then
+        sudo_run cp "$DAEMON_DST" "$DAEMON_DST.pdsbak"
+        say "one-time backup of the existing daemon: $DAEMON_DST.pdsbak"
+    fi
+    sudo_run install -m755 "$daemon_bin" "$DAEMON_DST"
+    say "daemon installed: $DAEMON_DST"
+
+    local ds4ctl_src="$SCRIPT_DIR/ds4ctl"
+    [[ -f "$ds4ctl_src" ]] || die "ds4ctl not found at $ds4ctl_src
+  what to do: this is a broken proton-ds installation — clone the repo fully"
+    if [[ -e "$DS4CTL_DST" && ! -e "$DS4CTL_DST.pdsbak" ]]; then
+        sudo_run cp "$DS4CTL_DST" "$DS4CTL_DST.pdsbak"
+        say "one-time backup of the existing ds4ctl: $DS4CTL_DST.pdsbak"
+    fi
+    sudo_run install -m755 "$ds4ctl_src" "$DS4CTL_DST"
+    say "ds4ctl installed: $DS4CTL_DST"
+
+    if [[ $DRY_RUN -eq 0 ]]; then
+        say "daemon is installed but NOT started (lifecycle is yours: sudo ds4ctl start|stop|status)"
+        manifest_set "system.daemon" "\"$DAEMON_DST\""
+        manifest_set "system.ds4ctl" "\"$DS4CTL_DST\""
+        manifest_add_step "\"system: daemon + ds4ctl installed (sudo; one-time .pdsbak backups)\""
+    fi
+}
+
+install_system
+
+# ── Phase 5: verify gate ─────────────────────────────────────────────────────
+verify_gate() {
+    step "verify gate"
+    local verifiers_dir="$SCRIPT_DIR/../verifiers"
+    [[ -d "$verifiers_dir" ]] || die "verifiers/ not found at $verifiers_dir
+  what to do: this is a broken proton-ds installation — clone the repo fully"
+
+    if [[ $OPT_SKIP_VERIFY -eq 1 ]]; then
+        warn "verify gate skipped (--skip-verify)"
+        manifest_set "verified" "false"
+        manifest_set "verify_reason" '"skipped (--skip-verify)"'
+        warn "the -DS instance is installed but NOT verified — run games at your own risk"
+        return
+    fi
+
+    # winegcc dep
+    command -v winegcc >/dev/null 2>&1 || die "winegcc not found — the verify gate needs it to build the gameless verifiers
+  what to do: install the wine development tools package (Arch: wine-tools;
+  Debian/Ubuntu: wine-development or libwine-dev), then re-run setup
+  or re-run with --skip-verify to install without verification"
+
+    # daemon question: the 0x12/0xA3 gates need a LIVE virtual DS4
+    local daemon_up=0
+    if pgrep -x ds4linux-daemon >/dev/null 2>&1; then
+        say "daemon is already running — using it for verification"
+        daemon_up=1
+    else
+        local answer=""
+        if [[ $OPT_WITH_BUILD -eq 0 && -t 0 ]]; then
+            printf 'Start the daemon now for verification? A connected DualSense is required. [Y/n] '
+            read -r answer
+        else
+            warn "non-interactive run — daemon will NOT be started"
+        fi
+        if [[ "${answer,,}" == "y" || -z "$answer" && -t 0 ]]; then
+            sudo_run ds4ctl start && daemon_up=1 || warn "ds4ctl start failed — continuing without the daemon"
+        fi
+    fi
+
+    if [[ $daemon_up -ne 1 ]]; then
+        warn "no live daemon: the 0x12/0xA3 gates CANNOT pass — marking unverified instead of failing"
+        manifest_set "verified" "false"
+        manifest_set "verify_reason" '"no-daemon"'
+        warn "installed but NOT verified: connect a DualSense, run 'sudo ds4ctl start', then re-run setup (or verify manually: verifiers/verify.sh \"$DS_DIR\")"
+        return
+    fi
+
+    # throwaway prefix under $HOME (wine refuses /tmp dirs in some setups)
+    local pfx rc=0
+    pfx="$(mktemp -d "$HOME/.proton-ds-verify.XXXXXX")" || die "cannot create a throwaway verify prefix under $HOME"
+    say "throwaway WINEPREFIX: $pfx"
+    # PATH: make the -DS dist's wine/wineserver win over any system wine —
+    # otherwise a system wineserver with a different protocol version
+    # intercepts the client (classic "version mismatch" wine client error)
+    if ! (cd "$verifiers_dir" && PATH="$DS_DIR/files/bin:$PATH" WINEDEBUG=-all WINEPREFIX="$pfx" \
+              wine wineboot -i >/dev/null 2>&1); then
+        rm -rf "$pfx"
+        die "failed to initialize the throwaway WINEPREFIX (wineboot)
+  what to do: check disk space and the instance integrity; report if it persists"
+    fi
+    if ! (cd "$verifiers_dir" && PATH="$DS_DIR/files/bin:$PATH" ./verify.sh "$DS_DIR" "$pfx"); then
+        rc=1
+    fi
+    rm -rf "$pfx"
+    if [[ $rc -ne 0 ]]; then
+        die "VERIFY GATE FAILED
+  the verifier output above shows which gate failed
+  safe abort: the -DS copy will be removed (trap); the stock instance is untouched
+  note: the daemon and ds4ctl are installed system-wide — run uninstall.sh to remove them"
+    fi
+    say "verify gate: ALL GREEN"
+    manifest_set "verified" "true"
+    manifest_set "verify_reason" '"all-green (hidprobe + ditest)"'
+    manifest_add_step "\"verify: ALL GREEN (hidprobe gates + ditest twin-hidden)\""
+}
+
+verify_gate
 
 CREATED_DS=0
 if [[ $DRY_RUN -eq 1 ]]; then
