@@ -68,10 +68,20 @@ std::vector<std::uint8_t> HidCore::build_feature(std::uint8_t rnum) const {
             put(31, pos);  put(33, neg);
             break;
         }
-        case 0x12: { // paired-device/link info (16 B): ID + MAC in LE order
+        case 0x12: { // paired-device/link info (16 B)
+            // ZERO MAC, deliberately. Bluez's sixaxis plugin reads this
+            // report for USB-paired DS4s and feeds the address into the
+            // bluetooth adapter — with a real-looking MAC it starts a
+            // pairing session against the gadget, which deadlocks the
+            // kernel BT stack on repeated stack cycles (freeze incident
+            // 2026-08-18, journal-proven: "sixaxis: setting up new device"
+            // seconds before each lockup). An all-zero address makes the
+            // plugin bail out harmlessly ("failed to read device address").
+            // Wine/libScePad gates on the 0x12 transfer SUCCEEDING, not on
+            // the MAC value — verified: Detroit + gameless verify passed
+            // with a MAC here, and zero is equally opaque to them.
             out.assign(16, 0);
             out[0] = 0x12;
-            for (int i = 0; i < 6; ++i) out[1 + i] = mac_[5 - i];
             break;
         }
         case 0x81: { // Bluetooth bdaddr (7 B): ID + MAC in LE order
