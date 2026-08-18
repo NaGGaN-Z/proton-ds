@@ -25,12 +25,26 @@
 
 ## v0.2.x — hardening (next)
 
-- [ ] `setup.sh --gadget` mode (pattern hand-verified on the reference
-      machine 2026-08-18): build+install gadget-shim to /usr/bin,
-      daemon from the fork, NOPASSWD sudoers drop-in
-      (`/etc/sudoers.d/ds4ctl`, exact binary path, visudo -c before and
-      after), desktop shortcuts (xdg-user-dir DESKTOP, localized);
-      uninstall reverses all four
+- [ ] **One-command install (the top priority — current install is pain
+      even for the author)**. Decision (2026-08-18): curl|bash script
+      delivering STATIC binaries from GitHub Releases, NOT source-build
+      on the user machine:
+      `curl -fsSL https://github.com/NaGGaN-Z/proton-ds/install.sh | bash`
+      - GH Actions release pipeline: static gadget-shim + daemon
+        (check: only libstdc++/libevdev externals — both static-linkable)
+        in an Arch container; sha256-gated download (mechanics proven by
+        the v0.1 winebus prebuilt flow)
+      - preflight fail-fast: kernel modules (dummy_hcd/libcomposite/
+        usb_f_fs), stock GE instance present, running-as-root check —
+        human-readable "what to install" messages
+      - install (idempotent): binaries to /usr/bin, NOPASSWD sudoers
+        drop-in (`/etc/sudoers.d/ds4ctl`, exact path, visudo -c before
+        and after), desktop shortcuts (xdg-user-dir DESKTOP, localized)
+      - verify-gadget run at the end → "ready, click Start"
+      - `--from-source` fallback for -git users / odd Arch variants
+      - uninstall.sh symmetric reversal
+      - TARGET: Arch family ONLY for v0.2.x (dev platform); other distros
+        = issues, by demand (README → Portability has the kernel check)
 - [ ] Wide game matrix on the gadget path (BG3, DS:DC-emulated, more
       Sony ports); gyro/touchpad in-game checks (T8 leftovers)
 - [ ] Multi-pad story: bridge protocol is single-client; define behavior
@@ -45,6 +59,8 @@
 
 ## v0.3 — Version matrix & CI
 
+- [ ] Release CI (shared with the one-command install): build static
+  binaries on tag push, attach + sha256 to the Release
 - [ ] GitHub Actions: stock-vs-patched dedup-drift test case (catches
       wine changes to the Sony allowlist/priorities — the lesson of
       2026-08-18: "stock chain is dead" was wrong for GE11-3)
@@ -56,9 +72,19 @@
 
 ## v0.4 — Comfort & adoption
 
+- [ ] Profile engine (prerequisite for GUI value): apply `Profile` in
+      the daemon's `translate_events` (button remap, stick
+      sensitivity/deadzones) — today the mapping is hardcoded inline and
+      `slot.profile` is only used for the lightbar; headless main does
+      not start the IPC server, so LoadProfile/SaveProfile have no
+      consumer. Once the engine exists, profiles work in BOTH paths for
+      free (the daemon is shared); bridge mode must keep the
+      game-controlled lightbar (skip profile lightbar there)
 - [ ] `proton-ds status` — one-command health check (daemon, gadget,
       bridge, per-instance posture)
 - [ ] Tray GUI (thin wrapper over CLI): emulation ON/OFF, Proton status
+      — a FULL GUI waits for the profile engine + multi-pad (nothing to
+      manage yet beyond two buttons)
 - [ ] Troubleshooting guide (PROTON_LOG wizard; known incidents)
 - [ ] AUR / COPR packaging
 
