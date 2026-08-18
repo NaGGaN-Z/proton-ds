@@ -8,6 +8,35 @@ Witcher 3, BG3, Death Stranding (SDL2 — icons+input).
 **Nothing lives in the game prefix.** All five components are system-side;
 the user's only per-game action is selecting the patched Proton.
 
+## E3: the gadget path (v0.2 Phase 1, 2026-08-18) — STOCK Proton, zero patches
+
+A USB gadget DS4 (054c:09cc, real 507 B descriptor) raised on `dummy_hcd`
+via configfs+FunctionFS. The kernel registers it as a real DualShock 4
+(`hid-sony: Registered DualShock4 hw_version=0x3100`), wine's stock Sony
+allowlist makes hidraw win the dedup — no twins, no IG_/XI_ dance, no
+hex-patched drivers. The stack above (B1) stays for the uhid/daemon path
+and old GE instances; for GE-Proton11-3+ stock it is obsolete.
+
+| Game | Proton (stock) | Result | Notes |
+|---|---|---|---|
+| Detroit: Become Human | Proton 9.0-4 | ✅ icons + input | libScePad accepted the gadget: GetFeature 0x12/0xA3 chain green in gameless verify |
+| The Witcher 3 | GE-Proton11-3 | ✅ icons + input | winebus created the device from `dummy_hcd.0/.../hidraw10` |
+
+Runtime telemetry (user session ~5.4 min): `reports=14783 ep1_writes=14783`
+(100 % delivery), `ep2_reads=276` (games sent output). Rumble/lightbar and
+touchpad/gyro in-game checks pending — tracked for wide-test follow-ups.
+Gameless criteria + teardown ×3: `verifiers/verify-gadget.sh` (ALL GREEN).
+Logs preserved: `steam-1222140-e3-detroit.log`, `steam-292030-e3-w3.log`.
+
+Identity notes (empirically pinned):
+- Gadget serial **must** be the pad MAC +1 (last octet): hid-playstation
+  dedups controllers by MAC and refuses a duplicate (`probe failed -17`).
+- `dummy_udc.0/state` sticks at `configured` after clean unbind (quirk);
+  the real unbind marker is the gadget hidraw disappearing + dmesg
+  `USB disconnect`.
+- Stale registry ghosts (`IG_00…DS4EMU001` from the SenseShock era) are
+  inert — the WMI gate reads live PnP, not registry.
+
 ## Component map
 
 | # | Component | Location | Change | Why it exists |

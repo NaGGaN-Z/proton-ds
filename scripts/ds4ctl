@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ds4ctl — wrapper для ds4linux-daemon.
 # Команды: start | stop | restart | status | log
+#          gadget start | gadget stop | gadget status   (E3: USB gadget-путь)
 #
 # Дополнительно:
 # - При start закрывает доступ к hidraw real DualSense (chmod 000), чтобы wine
@@ -14,6 +15,9 @@
 #   остаётся доступен wine. Wine видит ДВА устройства (real + virtual) и игры
 #   могут выбрать real (который не отдаёт ввод). chmod 000 принудительно
 #   закрывает real hidraw от wine, остаётся только virtual DS4.
+#
+# Gadget-путь (E3): поднимает USB-gadget DS4 (054c:09cc) через gadget-shim —
+# ноль wine-патчей на сток GE-Proton11-3+. Тот же hide-механизм для real pad.
 
 set -uo pipefail
 
@@ -23,6 +27,11 @@ HIDDEN_LIST=/run/ds4ctl-hidden-hidraw
 LOGFILE=/var/log/ds4linux-daemon.log
 STARTUP_WAIT=3        # секунд на создание virtual DS4
 SIGTERM_GRACE=2       # секунд ждать после SIGTERM перед SIGKILL
+
+# Gadget (E3): бинарь gadget-shim; в dev — переопределяется env.
+GADGET_SHIM="${PDS_GADGET_SHIM:-/usr/bin/gadget-shim}"
+GADGET_LOG=/var/log/gadget-shim.log
+GADGET_PIDFILE=/run/gadget-shim.pid
 
 # DualSense (real) VID:PID — то, что прячем
 REAL_VENDOR=054c
@@ -289,6 +298,143 @@ cmd_log() {
     fi
 }
 
+# ── Gadget (E3) ───────────────────────────────────────────────────────────────
+
+gadget_detect_patched_winebus() {
+    # Эмпирика 2026-08-18: патченный winebus (V1.3) скорит 09CC → близнецы →
+    # IG_-гейт. Гаджет создан для СТОКа; на патченном инстансе он ломается.
+    local d
+    for d in /home/*/.steam/steam/compatibilitytools.d/*/ \
+             /home/*/.local/share/Steam/compatibilitytools.d/*/; do
+        [[ -d "$d" ]] || continue
+        if grep -qa "Sony Computer En" "$d/files/lib/wine/x86_64-unix/winebus.so" 2>/dev/null; then
+            c_warn "WARN: patched winebus detected: $d"
+            c_warn "      gadget path targets STOCK GE-Proton11-3+ instances."
+            c_warn "      On a patched instance V1.3 spoils 09CC (twin devices, IG_ gate)."
+            c_warn "      Switch the game to a stock instance or use the uhid path (ds4ctl start)."
+        fi
+    done
+}
+
+gadget_pad_serial() {
+    # MAC реального падда из имени power_supply (hid-playstation кладёт его
+    # туда всегда — USB и BT): ps-controller-battery-AA:BB:CC:DD:EE:FF.
+    # ВАЖНО: serial гаджета = MAC+1 (последний октет). hid-playstation
+    # дедуплицирует контроллеры по MAC (dmesg: "Duplicate device found for
+    # MAC address ..." → probe failed -17) — гаджет с MAC реального падда
+    # драйвер биндить отказывается.
+    local name last
+    for name in /sys/class/power_supply/ps-controller-battery-*; do
+        [[ -d "$name" ]] || continue
+        name="${name##*ps-controller-battery-}"
+        name="${name//:/}"
+        last=$(( 0x${name:10:2} + 1 ))
+        printf '%s%02x\n' "${name:0:10}" "$last"
+        return 0
+    done
+    return 1
+}
+
+cmd_gadget_start() {
+    if [[ $EUID -ne 0 ]]; then
+        c_err "gadget start requires root (configfs/mount/UDC): run with sudo"
+        return 2
+    fi
+    if [[ ! -x "$GADGET_SHIM" ]]; then
+        c_err "gadget-shim not found: $GADGET_SHIM"
+        c_err "  likely cause: shim not built/installed"
+        c_err "  what to do:   build gadget/build.sh, install to /usr/bin/gadget-shim"
+        c_err "                or set PDS_GADGET_SHIM=<path>"
+        return 2
+    fi
+    if [[ -f "$HIDDEN_LIST" ]]; then
+        c_warn "Stale hidden hidraw list found, restoring first..."
+        restore_real_dualsense
+    fi
+
+    gadget_detect_patched_winebus
+
+    local serial="" desc="real"
+    local args=()
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --serial)     serial="$2"; shift 2 ;;
+            --descriptor) desc="$2"; shift 2 ;;
+            *) c_err "unknown option: $1"; return 64 ;;
+        esac
+    done
+    if [[ -z "$serial" ]]; then
+        if ! serial="$(gadget_pad_serial)"; then
+            c_warn "No DualSense found — using placeholder identity aabbccddeeff."
+            c_warn "(gadget works, but per-pad serial/battery identity is generic)"
+        fi
+    fi
+
+    echo "Starting gadget-shim (serial $serial, descriptor $desc)..."
+    "$GADGET_SHIM" start --serial "$serial" --descriptor "$desc"
+    local rc=$?
+    if [[ $rc -ne 0 ]]; then
+        c_err "gadget-shim start failed (rc=$rc); see $GADGET_LOG"
+        return $rc
+    fi
+
+    # Ждём энумерации: hid-sony биндится ~0.4-1 c после UDC-bind — гонка
+    # с фиксированным sleep делала ложный WARN. Retry до 5 c честно.
+    local waited=0 enum_ok=0
+    while (( waited < 10 )); do
+        if grep -qE "054C:000009CC" /sys/class/hidraw/*/device/uevent 2>/dev/null; then
+            enum_ok=1
+            break
+        fi
+        sleep 0.5
+        waited=$((waited + 1))
+    done
+    if (( enum_ok )); then
+        c_ok "Gadget DS4 enumerated (hidraw node created)"
+    else
+        c_warn "Gadget up but no 054C:09CC hidraw after 5s — check $GADGET_LOG"
+    fi
+
+    hide_real_dualsense
+    if [[ -f "$HIDDEN_LIST" ]]; then
+        c_ok "Hidden real DualSense hidraw from winebus"
+    fi
+    c_ok "Gadget mode active: use a STOCK GE-Proton instance for games"
+}
+
+cmd_gadget_stop() {
+    if [[ $EUID -ne 0 ]]; then
+        c_err "gadget stop requires root: run with sudo"
+        return 2
+    fi
+    "$GADGET_SHIM" stop
+    local rc=$?
+    restore_real_dualsense
+    if [[ $rc -eq 0 ]]; then
+        c_ok "Gadget stopped, real DualSense restored"
+    elif [[ $rc -eq 11 ]]; then
+        echo "Gadget already stopped."
+        rc=0
+    else
+        c_err "gadget-shim stop failed (rc=$rc); see $GADGET_LOG"
+    fi
+    return $rc
+}
+
+cmd_gadget_status() {
+    "$GADGET_SHIM" status
+    echo
+    if [[ -f "$HIDDEN_LIST" ]]; then
+        echo "hidden real hidraw: $(tr '\n' ' ' < "$HIDDEN_LIST")"
+    else
+        echo "hidden real hidraw: (none)"
+    fi
+    if pgrep -x steam >/dev/null 2>&1; then
+        c_warn "Steam is running — restart Steam after switching gadget on/off"
+        c_warn "so winebus re-enumerates controllers."
+    fi
+}
+
 usage() {
     cat <<'USAGE'
 ds4ctl — wrapper for ds4linux-daemon
@@ -300,6 +446,11 @@ Usage:
   sudo ds4ctl status          Show daemon, virtual devices, hidden hidraw, Steam
   sudo ds4ctl log [N]         Tail last N lines of daemon log (default 50)
 
+Gadget path (E3 — stock Proton, zero wine patches):
+  sudo ds4ctl gadget start [--serial <MAC>] [--descriptor real|vigem]
+  sudo ds4ctl gadget stop
+  ds4ctl gadget status
+
 What this wrapper does on top of ds4linux-daemon:
   1. Hides real DualSense /dev/hidraw* from winebus (chmod 000) so wine/Proton
      see only the virtual DS4. This fixes the "gamepad visible but no input"
@@ -309,7 +460,14 @@ What this wrapper does on top of ds4linux-daemon:
   4. Verifies virtual DS4 was actually created after start.
   5. Restores hidraw access on stop via udevadm trigger.
 
-Requires root (for /usr/bin/ds4linux-daemon + uinput + chmod hidraw).
+Gadget mode:
+  6. Raises a USB gadget DS4 (054c:09cc) via gadget-shim — the kernel sees a
+     real DualShock 4, stock GE-Proton11-3+ needs no patches.
+  7. Same real-pad hiding as the daemon path; serial comes from the pad MAC.
+  8. Warns when a patched winebus instance is present (V1.3 breaks 09CC).
+
+Requires root (for /usr/bin/ds4linux-daemon + uinput + chmod hidraw;
+gadget mode: configfs + mount + UDC bind).
 USAGE
 }
 
@@ -319,6 +477,15 @@ case "${1:-}" in
     restart) cmd_stop; cmd_start ;;
     status)  cmd_status ;;
     log)     shift; cmd_log "${1:-}" ;;
+    gadget)
+        shift
+        case "${1:-}" in
+            start)  shift; cmd_gadget_start "$@" ;;
+            stop)   cmd_gadget_stop ;;
+            status) cmd_gadget_status ;;
+            *)      usage; exit 64 ;;
+        esac
+        ;;
     -h|--help|help) usage ;;
     *)       usage; exit 64 ;;
 esac
