@@ -25,8 +25,12 @@
 
 ## v0.2.x — hardening (next)
 
-- [ ] setup.sh gadget mode: build+install gadget-shim, daemon fork;
-      `ds4ctl gadget` as the documented entrypoint
+- [ ] `setup.sh --gadget` mode (pattern hand-verified on the reference
+      machine 2026-08-18): build+install gadget-shim to /usr/bin,
+      daemon from the fork, NOPASSWD sudoers drop-in
+      (`/etc/sudoers.d/ds4ctl`, exact binary path, visudo -c before and
+      after), desktop shortcuts (xdg-user-dir DESKTOP, localized);
+      uninstall reverses all four
 - [ ] Wide game matrix on the gadget path (BG3, DS:DC-emulated, more
       Sony ports); gyro/touchpad in-game checks (T8 leftovers)
 - [ ] Multi-pad story: bridge protocol is single-client; define behavior
