@@ -23,19 +23,54 @@ and old GE instances; for GE-Proton11-3+ stock it is obsolete.
 | The Witcher 3 | GE-Proton11-3 | ✅ icons + input | winebus created the device from `dummy_hcd.0/.../hidraw10` |
 
 Runtime telemetry (user session ~5.4 min): `reports=14783 ep1_writes=14783`
-(100 % delivery), `ep2_reads=276` (games sent output). Rumble/lightbar and
-touchpad/gyro in-game checks pending — tracked for wide-test follow-ups.
+(100 % delivery), `ep2_reads=276` (games sent output). Touchpad/gyro
+in-game checks pending — tracked for wide-test follow-ups.
 Gameless criteria + teardown ×3: `verifiers/verify-gadget.sh` (ALL GREEN).
 Logs preserved: `steam-1222140-e3-detroit.log`, `steam-292030-e3-w3.log`.
+
+Rumble/lightbar (physically verified 2026-08-18, kernel-referenced):
+DualSense USB output = **63-byte** report 0x02; `[1]flag0=0x02`
+(HAPTICS_SELECT), `[2]flag1=0x04` (lightbar), `[3]weak [4]strong`,
+**`[39]flag2=0x04`** (COMPATIBLE_VIBRATION2 — the v2-pad rumble switch,
+invisible in usbmon's 32 B truncation), `[45..47]` RGB; rumble+lightbar
+must share ONE report (separate writes erase the motors). Ground truth =
+usbmon capture of hid-playstation's own frames + `dualsense_output_worker`.
 
 Identity notes (empirically pinned):
 - Gadget serial **must** be the pad MAC +1 (last octet): hid-playstation
   dedups controllers by MAC and refuses a duplicate (`probe failed -17`).
+- **Feature 0x12 answers with a ZERO MAC** (daf499f): bluez's sixaxis
+  plugin opens the gadget hidraw, reads 0x12, and with a real-looking
+  address opens kernel BT pairing sessions — repeated stack cycles
+  deadlocked the kernel (silent lockup: scheduler dead, network softirq
+  alive; freeze ×3 2026-08-18, journal-proven by
+  `sixaxis: setting up new device` seconds before each death). Zero
+  address → harmless pending D-Bus auth, no kernel session. Wine gates
+  on the transfer succeeding, not the value.
 - `dummy_udc.0/state` sticks at `configured` after clean unbind (quirk);
   the real unbind marker is the gadget hidraw disappearing + dmesg
   `USB disconnect`.
 - Stale registry ghosts (`IG_00…DS4EMU001` from the SenseShock era) are
   inert — the WMI gate reads live PnP, not registry.
+
+### Phase 2 — daemon bridge (BT input, 2026-08-18)
+
+`ds4ctl gadget start --bridge` runs the ds4linux fork daemon in
+`--gadget-bridge` mode: it owns the pad (evdev grab, PR#3 translations,
+profiles) and streams **final 64-byte DS4 reports** over
+`/run/ds4linux-bridge.sock` (binary framing per `gadget-bridge-spec.md`:
+`[u32 LE len][u8 type][data]`, latest-wins, reconnect 250ms→2s); the
+shim forwards to ep1 and relays host output back. Verified: **Detroit
+PS icons + input over a Bluetooth DualSense on stock Proton 9.0-4** —
+the capability SenseShock lacks (their libusb input is USB-only).
+
+Output encoding is transport-aware (kernel hid-playstation.c referenced,
+usbmon-verified): USB = 63-byte report 0x02; **BT = report 0x31, 78 B,
+seq<<4 @1, tag 0x10 @2, CRC32(seed 0xA2 over bytes 0..73) @74 LE**.
+Rumble on vibration_v2 pads needs `valid_flag2@39=0x04`; rumble+lightbar
+ride ONE combined report from persistent state. The legacy daemon's
+48-byte writes were never physically correct (partial lightbar, zero
+rumble) — fixed in the fork alongside the bridge work.
 
 ## Component map
 

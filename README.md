@@ -1,127 +1,103 @@
 # proton-ds — DualShock family under Proton, done right
 
 PS glyphs + correct native input + touchpad for a DualSense→DS4 virtual
-gamepad under Proton/Wine. Verified 4/4:
+gamepad under Proton/Wine. Two paths, one toolkit:
 
-| Game | Input layer | Result |
-|---|---|---|
-| Detroit: Become Human | libScePad (strict probe) | ✅ icons + input + touchpad |
-| The Witcher 3 | SDL2 | ✅ icons + input |
-| Baldur's Gate 3 | SDL2 | ✅ icons + input |
-| DEATH STRANDING DC | SDL2/Decima | ✅ icons + input |
-| DEATH STRANDING DC (native DualSense, no daemon) | MI_xx passthrough | ✅ icons + input |
+## E3 — gadget path (v0.2, primary): STOCK Proton, zero wine patches
 
-Device coverage: DS4 family via emulation (DualShock 4 v1/v2, and any
-source controller the daemon can read — DualSense→DS4 is the verified
-path), native DualSense passthrough. DS3/DS2 are out of scope (different
-protocols, not HID-DS4-style).
+A **real DS4 raised as a USB gadget** (configfs + FunctionFS on
+`dummy_hcd`): the kernel registers it as a genuine DualShock 4
+(`hid-sony: Registered DualShock4 hw_version=0x3100`), and wine's stock
+Sony allowlist does the rest — no patched drivers, no IG_/XI_ twins, no
+per-prefix anything. Works on stock GE-Proton11-3+ and stock Proton 9.x.
 
-Zero per-game configuration: everything installs system-side; the only
-user action is selecting the patched Proton instance for a game.
-
-## How it works (the five components)
-
-1. **ds4ctl wrapper** — lifecycle + hides the real DualSense hidraw
-   (prevents double input).
-2. **ds4linux daemon (fork)** — a *believable* DS4: Windows-correct name,
-   ViGEm-identical 467-byte descriptor, firmware-info feature 0xA3 blob
-   (version 0x3100 @ +0x23 — strict games gate on > 0x30FF), battery
-   bytes, full touchpad translation. Source: [NaGGaN-Z/ds4linux][fork],
-   branch `proton-compat` ([PR #3][pr]).
-3. **winebus.so patch** (V1/V1.1/V1.2/V1.3 in `bus_udev.c` + a
-   `main.c`/`bus_sdl.c` tweak) — hidraw gamepad classification for DS4
-   PIDs only + Windows-correct strings + version 0x0100; DualSense stays
-   on the native path.
-4. **winexinput.sys IG_00↔XI_00 swap** (data hex-patch) — puts the REAL
-   descriptor on the IG_00 interface path (what libScePad opens and the
-   WMI `IG_` gate matches).
-5. **hidclass.sys GUID patch** (data hex-patch) — registers the synthetic
-   twin interface under a dead GUID → invisible to XInput/DInput/SDL at
-   once → no double input, no per-game registry hacks.
-
-Full engineering story (detection-chain decode, why each piece exists,
-rollback inventory): `docs/SOLUTION.md`.
-
-## Install
+| Game | Proton (stock) | Transport | Result |
+|---|---|---|---|
+| Detroit: Become Human | Proton 9.0-4 | USB / BT | ✅ icons + input |
+| The Witcher 3 | GE-Proton11-3 | USB | ✅ icons + input |
 
 ```bash
-git clone https://github.com/NaGGaN-Z/proton-ds
-cd proton-ds
-./scripts/setup.sh
+sudo ds4ctl gadget start            # standalone: shim reads the pad (USB)
+sudo ds4ctl gadget start --bridge   # daemon owns the pad (USB or BT),
+                                    # streams over /run/ds4linux-bridge.sock
+ds4ctl gadget status
+sudo ds4ctl gadget stop             # real pad restored
 ```
 
-`setup.sh` works on the **instance model**: it lists every Proton instance
-in `~/.local/share/Steam/compatibilitytools.d/`, you pick one, it makes a
-`<name>-DS` copy and patches **only the copy** (the stock instance is
-never touched; prefixes are never touched — wineboot propagates driver
-copies from the dist of the instance a game runs on):
+Requirements: kernel with `dummy_hcd`/`libcomposite`/`usb_f_fs` modules,
+root for start/stop. Use a **stock** Proton instance for games; a patched
+winebus (B1/V1.3) actively breaks 09CC (`ds4ctl` warns when it detects
+one).
 
-1. Instance scan → selection → `cp -a` to `<name>-DS` (disk-space check,
-   safe-abort cleanup on any failure)
-2. **winebus**: prebuilt `.so` from Releases (sha256-gated) when your
-   instance has one; otherwise it offers a source build
-   (wine@9578fa3 + GE patches 0018/0036 + V1.3 patch; needs gcc,
-   autoconf, bison, flex; module-only, ~10-30 min)
-3. **Driver hex-patches** in the copy: winexinput IG_00↔XI_00 swap ×2,
-   hidclass GUID ×2 — occurrence-count asserts, backups next to each file,
-   idempotent (already-patched → skip)
-4. **Daemon + ds4ctl** (sudo): builds the [fork][fork] daemon, one-time
-   `.pdsbak` backups of any existing binaries, installs. The daemon is
-   NOT auto-started — lifecycle is yours (`sudo ds4ctl start|stop|status`)
-5. **Verify gate**: gameless verifiers in a throwaway prefix — ALL GREEN
-   (needs a connected DualSense + running daemon; without them setup
-   degrades to `verified=false` instead of failing). FAIL → automatic
-   rollback of the -DS copy.
+Gameless verification: `verifiers/verify-gadget.sh <stock-GE-dir>` —
+hidpaths/hidprobe/ditest criteria for the stock path + teardown asserts,
+with a `--full` Nx-cycle mode.
 
-Flags: `--instance NAME`, `--dry-run` (full plan, zero changes),
-`--force`, `--with-build` (prefer the source build), `--skip-verify`.
+## Legacy — uhid path (v0.1): five-component stack for old instances
 
-## Uninstall
+For GE versions before 11-3 (and as the fallback): patched daemon +
+winebus V1.3 + winexinput IG↔XI swap + hidclass GUID kill. 4/4 verified
+2026-08-15 (Detroit, W3, BG3, DS:DC). Full story: `docs/SOLUTION.md`.
 
 ```bash
-./scripts/uninstall.sh            # pick a -DS instance, removes it
-./scripts/uninstall.sh --all --system --purge-cache
+./scripts/setup.sh        # instance model: patches a -DS COPY of Proton
+./scripts/uninstall.sh
 ```
 
-Manifest-driven (`proton-ds.json` inside each -DS instance). `--system`
-stops the daemon and restores daemon/ds4ctl from the `.pdsbak` backups
-(or removes them when absent). Note: uninstalling does not touch a
-running session — stop the daemon before launching games on the stock
-instance.
+## Architecture (E3)
+
+```
+DualSense (USB or BT)
+   │ evdev (daemon, PR#3 translations)        or  evdev (shim, standalone)
+   ▼                                                  ▼
+ds4linux-daemon --gadget-bridge ──64B DS4 reports──► gadget-shim
+   ▲   (unix socket, latest-wins)                      │ ep1 IN
+   │                                            configfs gadget 054c:09cc
+   │ rumble/lightbar (63B DS5 output,                 │ on dummy_hcd
+   │ BT: report 0x31+CRC32)                           ▼
+   └──────────────── ep2 OUT ◄──── hid-sony ◄── real USB enumeration
+                                                        ▼
+                                     wine (STOCK GE11-3+): hidraw wins
+                                     the dedup — no twins, PS glyphs
+```
+
+Design notes (hard-won, see `docs/SOLUTION.md` → E3):
+- gadget serial = pad MAC **+1** (hid-playstation dedups controllers by
+  MAC; a duplicate fails probe with -17)
+- feature 0x12 answers with a **zero MAC**: bluez's sixaxis plugin reads
+  it on real-looking addresses and opens kernel BT pairing sessions —
+  the 2026-08-16 freeze incident (daf499f, stress-verified fix)
+- DualSense output report is **63 bytes** (USB) — 48-byte writes light
+  the bar partially and never rumble; rumble needs `valid_flag2@39=0x04`
+  (vibration_v2 pads) and ONE combined report per effect update
+
+## Anti-pattern: dual-mode (both real pad and gadget visible)
+
+Don't hide-and-seek: if the real DualSense and the gadget DS4 are both
+visible, Sony-port games get **dual input**. The stack is a mode, not a
+mix: emulation ON (`gadget start`, real pad hidden) or OFF (`gadget
+stop`, real pad passes through untouched — use this for native-DS5 games
+like DS:DC). `ds4ctl` handles the hiding/restoring automatically.
 
 ## Layout
 
 ```
-scripts/    setup.sh / uninstall.sh (install pipeline), hexpatch.py (hex engine), ds4ctl
-patches/    winebus source patches (v13 + ge/); hex-patch recipes (winexinput swap, hidclass GUID)
-verifiers/  hidpaths / hidprobe / ditest (winegcc tools, no game needed)
+gadget/     gadget-shim (lifecycle, HID core, evdev input, bridge client)
+scripts/    ds4ctl (all modes) / setup.sh / uninstall.sh / hexpatch.py
+verifiers/  hidpaths / hidprobe / ditest / verify.sh / verify-gadget.sh
+patches/    winebus source patches (legacy path)
 tests/      golden hashes + stock fixtures (hexpatch self-test)
-docs/       SOLUTION.md — the decoded detection chain + full stack rationale
+docs/       SOLUTION.md (both paths' engineering story), gadget-bridge-spec.md
 ```
-
-## Scope & upstream posture
-
-- **Nothing here is upstream-ready as-is.** The `is_gamepad` patch looks
-  like a bugfix but hardcodes a Sony VID/PID allowlist over a broader gap
-  (hidraw has no gamepad classification for *any* device); an honest
-  upstream fix would classify from the HID descriptor instead. This repo
-  ships everything itself, GE-Proton-style.
-- The swap/GUID patches are product policy (DS-first): on this setup an
-  XInput-only game without an SDL fallback loses the pad. Use a stock
-  Proton instance for such games.
-- Stock Proton + daemon only = pad not visible (empirically verified,
-  see PR #3 discussion).
-- **Native DualSense works on the -DS instance** (V1.3 PID-scoping): the
-  winebus patch lifts the winexinput stack only over DS4-family PIDs
-  (05C4/09CC/0BA0); a real DualSense stays on the stock passthrough path.
-  Verified: DS:DC native DualSense + Detroit DS4 emulation on the same
-  patched instance — the -DS instance is universal.
 
 ## Credits
 
 - [ViGEmBus][vigem] — reference DS4 descriptor and firmware blobs (MIT).
 - [DS4Windows][ds4w] — touchpad layout cross-check.
 - [ds4linux][ds4linux] — the base emulator this fork improves.
+- [SenseShock][senseshock] — proof that the gadget topology works on
+  stock Proton (their USB-only libusb approach inspired the E3 pivot;
+  our input/BT/rumble layers are our own).
 
 Co-developed with GLM-5.2/LLM assistance.
 
@@ -130,3 +106,4 @@ Co-developed with GLM-5.2/LLM assistance.
 [vigem]: https://github.com/nefarius/ViGEmBus
 [ds4w]: https://github.com/CircumSpector/DS4Windows
 [ds4linux]: https://github.com/PalashDalsaniya/ds4linux
+[senseshock]: https://github.com/muhammad23012009/senseshock
