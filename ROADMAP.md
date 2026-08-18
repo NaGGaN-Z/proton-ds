@@ -80,7 +80,6 @@
 - [x] Zero per-prefix config proven
 - [x] E3 pivot research 2026-08-18: gadget+stock ✓ (Detroit+W3), gadget+
       B1 ✗ (V1.3 spoils 09CC), uhid+stock ✗ (identity-poor) — see
-      docs/SOLUTION.md and the proton-ds4-debug skill for the full
-      empirical matrix
+      docs/SOLUTION.md for the full empirical matrix
 
 [pr3]: https://github.com/PalashDalsaniya/ds4linux/pull/3

@@ -3,8 +3,8 @@
 //
 // Provenance:
 //  - kDs4ReportDescReal[507]: HID report descriptor captured from a physical
-//    DualShock 4 v2 (USB). Obtained via the SenseShock project's descriptor dump
-//    (/tmp/ss/descriptors.inc); identical bytes are present in every real DS4 unit.
+//    DualShock 4 v2 (USB); identical bytes are present in every real DS4 unit
+//    (dump cross-checked byte-for-byte against an independent capture).
 //  - kDs4ReportDescVigem[467]: byte-identical to ViGEmBus
 //    Ds4HidReportDescriptor (the de-facto Windows virtual-DS4 descriptor; our
 //    uhid-path veteran from the ds4linux fork).

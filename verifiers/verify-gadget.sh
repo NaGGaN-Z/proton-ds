@@ -16,8 +16,8 @@
 #     XInput); ERROR_DEVICE_NOT_CONNECTED was a B1-only expectation.
 #     dinput listing of the device is expected (no GUID patch) — informational.
 #
-# NB: run the verify phase from a USER session (e.g. naggan), not as root —
-# under a root environment hidprobe historically prints nothing.
+# NB: run the verify phase from a USER session (e.g. the desktop user),
+# not as root — under a root environment hidprobe historically prints nothing.
 
 set -uo pipefail
 VER_DIR="$(cd "$(dirname "$0")" && pwd)"

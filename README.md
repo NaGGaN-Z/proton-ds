@@ -66,7 +66,7 @@ Design notes (hard-won, see `docs/SOLUTION.md` → E3):
   MAC; a duplicate fails probe with -17)
 - feature 0x12 answers with a **zero MAC**: bluez's sixaxis plugin reads
   it on real-looking addresses and opens kernel BT pairing sessions —
-  the 2026-08-16 freeze incident (daf499f, stress-verified fix)
+  repeated stack cycles can deadlock the kernel (fixed, stress-verified)
 - DualSense output report is **63 bytes** (USB) — 48-byte writes light
   the bar partially and never rumble; rumble needs `valid_flag2@39=0x04`
   (vibration_v2 pads) and ONE combined report per effect update
