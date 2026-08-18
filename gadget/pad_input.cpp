@@ -165,31 +165,43 @@ void PadInput::apply_ds4_output(const std::uint8_t* data, std::size_t len) {
         return;
     }
 
-    // DualSense USB output report 0x02, 48 B (daemon set_rumble/set_lightbar
-    // semantics — the 4/4-verified encoding; SenseShock's own variant is broken).
-    if (flags & 0x01) { // motor control
-        std::uint8_t buf[48]{};
-        buf[0] = 0x02;
-        buf[1] = 0x01 | 0x02; // enable haptics + motor control
-        buf[3] = data[4];     // right / weak
-        buf[4] = data[5];     // left / strong
-        if (::write(hidraw_fd_, buf, sizeof(buf)) < 0)
-            LOGW(kTag, "rumble write: %s", std::strerror(errno));
-        else
-            LOGD(kTag, "rumble: weak=%u strong=%u", data[4], data[5]);
+    // DualSense USB output report 0x02, 63 B — encoding verified against the
+    // live kernel (usbmon + hid-playstation.c dualsense_output_worker):
+    //   [1] valid_flag0: 0x02 HAPTICS_SELECT (set for rumble, always)
+    //   [2] valid_flag1: 0x04 LIGHTBAR_CONTROL_ENABLE
+    //   [3] motor_right (weak)   [4] motor_left (strong)
+    //   [39] valid_flag2: 0x04 COMPATIBLE_VIBRATION2 — the actual rumble
+    //        switch on vibration_v2 pads; usbmon truncates at 32 B so this
+    //        byte is invisible in captures (cost a day to find)
+    //   [45]R [46]G [47]B
+    // NB: 63 bytes total — a 48-byte write lights the lightbar partially
+    //     and never rumbles (2026-08-18 lesson, physically verified).
+    // NB: ONE report for rumble+lightbar — hid-sony sends DS4 output with
+    //     BOTH flags set; two separate writes make the lightbar report
+    //     zero the motors 4 ms later (E2E smoke caught exactly that).
+    const bool want_rumble = flags & 0x01;
+    const bool want_light = flags & 0x02;
+    std::uint8_t buf[63]{};
+    buf[0] = 0x02;
+    if (want_rumble) {
+        buf[1] = 0x02;  // HAPTICS_SELECT
+        buf[39] = 0x04; // COMPATIBLE_VIBRATION2 (vibration_v2 pads)
+        buf[3] = data[4]; // motor_right = DS4 right/weak
+        buf[4] = data[5]; // motor_left = DS4 left/strong
     }
-    if (flags & 0x02) { // lightbar control
-        std::uint8_t buf[48]{};
-        buf[0] = 0x02;
-        buf[1] = 0x04; // flags: lightbar
+    if (want_light) {
+        buf[2] = 0x04; // valid_flag1: lightbar control enable
         buf[45] = data[6];
         buf[46] = data[7];
         buf[47] = data[8];
-        if (::write(hidraw_fd_, buf, sizeof(buf)) < 0)
-            LOGW(kTag, "lightbar write: %s", std::strerror(errno));
-        else
-            LOGD(kTag, "lightbar: #%02x%02x%02x", data[6], data[7], data[8]);
     }
+    if (!want_rumble && !want_light) return; // neither flag: nothing to apply
+    if (::write(hidraw_fd_, buf, sizeof(buf)) < 0)
+        LOGW(kTag, "output write: %s", std::strerror(errno));
+    else
+        LOGD(kTag, "output: rumble=%s(w=%u s=%u) light=%s(#%02x%02x%02x)",
+             want_rumble ? "on" : "off", data[4], data[5],
+             want_light ? "on" : "off", data[6], data[7], data[8]);
 }
 
 void PadInput::close_pads() {
