@@ -4,7 +4,7 @@ proton-ds: winebus V1.3 — Sony-gamepad scoping (DS4 is_gamepad + DualSense SDL
 (порядок: 0018 -> 0036 -> этот патч). ge/0014 НЕ применяется — см. ge/README.md.
 
 Состав (сверка побайтовая: sha256 bus_udev.c / main.c / bus_sdl.c после
-применения совпадают с задеплоенным деревом primepc 2026-08-15,
+применения совпадают с эталонным задеплоенным деревом (референсная машина), 2026-08-15,
 GE-Proton11-3-B1, игровая матрица 4/4):
 
 - bus_udev.c (hidraw_device_create):
