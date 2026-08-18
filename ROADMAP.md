@@ -1,75 +1,86 @@
 # Roadmap
 
-## v0.1 — Reproducible install (core milestone)
+## v0.2 — E3 gadget path (primary) — shipped 2026-08-18
 
-- [x] `setup.sh`: apply the winebus patch
-  - [x] build path: clone wine (GE-pinned commit) + GE patches 0018/0036 +
-        V1.3 → pregeneration (make_vulkan/specfiles/requests) → module-only
-        build (byte-exact vs deployed, modulo build-id)
-  - [x] prebuilt path: fetch `winebus.so` from Releases (sha256 + size
-        gate; single GE-Proton11-3 artifact in v0.1)
-- [x] `setup.sh`: hex-patches (winexinput swap ×2 dist copies, hidclass
-      GUID ×2 dist copies) with occurrence-count asserts + idempotency;
-      prefix copies excluded (wineboot propagates from the dist —
-      hash-audited)
-- [x] `setup.sh`: daemon + ds4ctl install from the ds4linux fork
-      (cmake+Ninja, one-time .pdsbak backups, not auto-started)
-- [x] `uninstall.sh`: manifest-driven removal, system restore from
-      .pdsbak, cache purge option
-- [x] verify.sh wired into setup as the final gate (ALL GREEN or
-      auto-rollback; no-daemon degrades to verified=false)
-- [ ] Smoke-test on a clean second machine (the 4/4 matrix re-run)
-      — primepc E2E install/uninstall green 2026-08-17; game matrix
-      re-run pending
+- [x] Gadget-shim: configfs+FunctionFS lifecycle, ordered teardown,
+      orphan cleanup, stale-mount guard (T2)
+- [x] HID core: ep0 SETUP answers (507B real / 467B ViGEm descriptor,
+      0x02/0x12/0x81/0xA3), ep1 writer (pre-ENABLE backoff), ep2 reader
+      (T3) — hid-sony registers the gadget as DS4 hw_version=0x3100
+- [x] Standalone input: DualSense evdev → DS4 reports, transport-agnostic
+      (T4); output: DS4 0x05 → DS5 63B report → rumble/lightbar (T5)
+- [x] ds4ctl gadget start|stop|status, pad MAC+1 serial, real-pad hiding,
+      patched-winebus warning (T6)
+- [x] verify-gadget.sh: stock-path criteria + teardown asserts + Nx
+      cycles — ALL GREEN ×3 (T7)
+- [x] Game matrix on stock: Detroit (Proton 9.0-4) + W3 (GE11-3), icons +
+      input (T8); rumble physically verified end-to-end
+- [x] Daemon bridge mode: --gadget-bridge (no virtual devices, IPC
+      stream per docs/gadget-bridge-spec.md), kernel-referenced DS5
+      output encoding incl. BT (0x31+CRC32) (T9)
+- [x] BT run: Detroit icons+input over a Bluetooth pad on stock Proton —
+      the capability SenseShock lacks (T10)
+- [x] Freeze incident solved: zero-MAC 0x12 answer vs bluez sixaxis
+      pairing (daf499f), stress-verified ×3
 
-## v0.2 — Version matrix & CI
+## v0.2.x — hardening (next)
 
-- [ ] GitHub Actions: build winebus.so for a matrix of GE-Proton versions
-- [ ] Auto-detect GE version → pick matching prebuilt (or warn+build)
-  (v0.1 has the manifest plumbing: instance-name keyed releases)
-- [ ] Optional upstream contribution: descriptor-based hidraw gamepad
-      classification (a NEW design, not our VID/PID patch — the allowlist
-      is product policy, see docs/SOLUTION.md upstream posture). Only if
-      someone wants to do the wine-review dance.
-- [ ] Test matrix: 2-3 kernels, Steam Deck (read-only /usr caveat!), NixOS/immutable distros notes
+- [ ] setup.sh gadget mode: build+install gadget-shim, daemon fork;
+      `ds4ctl gadget` as the documented entrypoint
+- [ ] Wide game matrix on the gadget path (BG3, DS:DC-emulated, more
+      Sony ports); gyro/touchpad in-game checks (T8 leftovers)
+- [ ] Multi-pad story: bridge protocol is single-client; define behavior
+      (error out / round-robin) and document
+- [ ] Steam Deck: read-only /usr constraint (gadget needs writable
+      /usr/bin + kernel modules — likely out of scope, document it)
+- [ ] systemd units for stack lifecycle (optional; manual ds4ctl works)
 
-## v0.3 — Comfort & adoption
+## v0.3 — Version matrix & CI
 
-- [ ] `proton-ds status` — one-command health check (daemon, gadget, Proton patches, per-game prefix state)
-- [ ] Tray GUI (thin wrapper over CLI): emulation ON/OFF, Proton status, game matrix
-- [ ] Troubleshooting guide (log capture wizard: PROTON_LOG flags explained)
+- [ ] GitHub Actions: stock-vs-patched dedup-drift test case (catches
+      wine changes to the Sony allowlist/priorities — the lesson of
+      2026-08-18: "stock chain is dead" was wrong for GE11-3)
+- [ ] GE-Proton version matrix: gadget path needs NOTHING per-version
+      (that's the point) — the matrix is regression testing, not builds
+- [ ] Legacy path maintenance: keep v0.1 stack working for old GE;
+      deprecation note for new GE (winebus patches harmful on GE11-3+)
+- [ ] Test matrix: 2-3 kernels (dummy_hcd availability), BT dongles
+
+## v0.4 — Comfort & adoption
+
+- [ ] `proton-ds status` — one-command health check (daemon, gadget,
+      bridge, per-instance posture)
+- [ ] Tray GUI (thin wrapper over CLI): emulation ON/OFF, Proton status
+- [ ] Troubleshooting guide (PROTON_LOG wizard; known incidents)
 - [ ] AUR / COPR packaging
 
 ## Backlog / research
 
-- [ ] SenseShock cross-check (daemon-side blobs comparison; why no BT there)
+- [ ] Profile engine: gadget topology as a generic "virtual USB HID
+      device" framework (identity profiles + input sources) — the E3
+      shim is one profile (DS4); others (DS3, Switch Pro?) need
+      descriptor + feature-blob harvesting first
 - [ ] hex-patches → source .patch files against winexinput/hidclass
-      (survives rebuilds, reviewable)
-- [ ] E3 gadget topology (f_hid) — kernel-side alternative for the
-      V1.1/V1.2 layer only: a real USB parent provides strings, version
-      and topology natively, dropping the wine-side fabrication patch.
-      V1 (is_gamepad), the winexinput swap and the GUID patch stay
-      regardless (verified: stock chain is dead without them). Big
-      effort, currently unnecessary — a cleanup, not an enabler
+      (legacy path; survives rebuilds, reviewable)
+- [ ] Upstream conversation: is there ANY acceptable upstream shape for
+      hidraw gamepad classification? (descriptor-based, no allowlist —
+      see docs/SOLUTION.md upstream posture)
 
 ## Done
 
 - [x] v0.1 install pipeline (setup.sh/uninstall.sh, hexpatch engine,
       golden-hash self-test) — E2E green on the reference machine
-      2026-08-17: instance model, winebus prebuilt+build paths, driver
-      hex-patches (4/4 hashes == deployed goldens), daemon+ds4ctl,
-      verify gate ALL GREEN with a live DualSense, uninstall restores
-      pre-install state.
-
-- [x] Native DualSense regression on patched Proton — RESOLVED 2026-08-15:
-      V1 (is_gamepad) lifted the winexinput stack over the real DS5,
-      replacing the bare `MI_03` interface (which DS:DC opens natively)
-      with synthetic IG_03 + GUID-hidden XI_03. Fixed by V1.3: DS4 PIDs
-      only (05C4/09CC/0BA0); DualSense stays on the stock path. Verified:
-      DS:DC native DualSense + Detroit emulation both work on the same
-      patched instance.
-- [x] Daemon fixes (name/descriptor/0xA3/touchpad) — [ds4linux PR #3](https://github.com/PalashDalsaniya/ds4linux/pull/3)
+      2026-08-17; game matrix re-run pending (now covered by the gadget
+      path for stock GE11-3+)
+- [x] Native DualSense regression on patched Proton — RESOLVED 2026-08-15
+      (V1.3 PID scoping)
+- [x] Daemon fixes (name/descriptor/0xA3/touchpad) — [ds4linux PR #3][pr3]
 - [x] Gameless verifiers (hidprobe/ditest/hidpaths + verify.sh)
-- [x] Hex-patch recipes documented with safety rules
-- [x] 4/4 game matrix verified (Detroit, W3, BG3, DS)
-- [x] Zero per-prefix config proven (dinput key removed as redundant)
+- [x] 4/4 game matrix on the legacy path (Detroit, W3, BG3, DS)
+- [x] Zero per-prefix config proven
+- [x] E3 pivot research 2026-08-18: gadget+stock ✓ (Detroit+W3), gadget+
+      B1 ✗ (V1.3 spoils 09CC), uhid+stock ✗ (identity-poor) — see
+      docs/SOLUTION.md and the proton-ds4-debug skill for the full
+      empirical matrix
+
+[pr3]: https://github.com/PalashDalsaniya/ds4linux/pull/3
