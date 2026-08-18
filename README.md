@@ -79,6 +79,28 @@ mix: emulation ON (`gadget start`, real pad hidden) or OFF (`gadget
 stop`, real pad passes through untouched — use this for native-DS5 games
 like DS:DC). `ds4ctl` handles the hiding/restoring automatically.
 
+## Portability
+
+The gadget path needs three kernel modules and a writable spot for the
+binaries. One-command compatibility check on any distro:
+
+```bash
+modprobe dummy_hcd libcomposite usb_f_fs 2>/dev/null; ls /sys/class/udc
+```
+
+`dummy_udc.0` (or any UDC) listed → the path can work (root required for
+start/stop, as always).
+
+- **Steam Deck / SteamOS**: unlikely — the Valve kernel ships without
+  `dummy_hcd` (no UDC to bind the gadget to; the Deck's real OTG
+  controller is not a loopback substitute), and the read-only `/usr`
+  adds friction. Untested — run the check above to know for sure.
+- **Bazzite / Fedora Atomic**: likely works — Fedora kernels build the
+  needed modules, `/home` is writable for the binaries. Untested; the
+  udev/uaccess rules for hidraw access may need attention.
+- **Conventional distros** (Arch, CachyOS, mainstream Fedora/Ubuntu):
+  expected to work — this is the verified configuration family.
+
 ## Layout
 
 ```

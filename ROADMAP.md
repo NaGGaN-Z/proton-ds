@@ -32,7 +32,11 @@
 - [ ] Multi-pad story: bridge protocol is single-client; define behavior
       (error out / round-robin) and document
 - [ ] Steam Deck: read-only /usr constraint (gadget needs writable
-      /usr/bin + kernel modules — likely out of scope, document it)
+      storage for binaries + kernel modules — likely out of scope;
+      README → Portability has the one-command check; run it on-device
+      for a definitive verdict)
+- [ ] Bazzite verify: kernel modules expected present (Fedora family);
+      check udev/uaccess rules for hidraw; document result
 - [ ] systemd units for stack lifecycle (optional; manual ds4ctl works)
 
 ## v0.3 — Version matrix & CI
