@@ -6,6 +6,7 @@
 #include "descriptors.h"
 #include "hid_core.h"
 #include "pad_input.h"
+#include "bridge.h"
 
 #include <cerrno>
 #include <cstdio>
@@ -91,6 +92,8 @@ struct Options {
     std::string serial = "aabbccddeeff";
     std::string descriptor = "real";
     std::string udc;
+    bool bridge = false;
+    std::string bridge_socket = "/run/ds4linux-bridge.sock";
 };
 
 std::string err_str(int e) { return std::string(std::strerror(e)); }
@@ -138,8 +141,10 @@ std::string normalize_serial(const std::string& in) {
 void usage(std::FILE* out) {
     std::fprintf(out,
         "usage: gadget-shim start [--serial <MAC>] [--descriptor real|vigem] [--udc <name>]\n"
+        "                        [--bridge [--bridge-socket <path>]]\n"
         "       gadget-shim stop\n"
         "       gadget-shim status\n"
+        "--bridge: daemon owns the pad; input streams from /run/ds4linux-bridge.sock\n"
         "exit codes: 0 ok, 2 usage/IO, 10 already started, 11 already stopped\n");
 }
 
@@ -584,22 +589,53 @@ int child_run(const Options& opt, int ready_pipe_w) {
     signal(SIGTERM, on_signal);
 
     static pds::gadget::Counters counters; // outlives serve_loop for status
-    pds::gadget::PadInput pad;             // T4: input source; T5: output sink
+    pds::gadget::PadInput pad;             // standalone input source/output sink
+    pds::gadget::BridgeClient bridge;      // daemon bridge (Phase 2, --bridge)
     pds::gadget::HidCore hid;
-    hid.init(opt.descriptor == "vigem", opt.serial, &counters,
-             [&pad](const std::uint8_t* data, std::size_t len) {
-                 pad.apply_ds4_output(data, len); // ep2/SET_REPORT → rumble/lightbar
-             });
-    pad.init([&hid](const std::uint8_t rpt[64]) { hid.queue_report(rpt); });
+
+    if (opt.bridge) {
+        // Bridge mode: the DAEMON owns the pad (input + output); the shim
+        // only forwards. Serial/MAC arrives as PAD_INFO after connect — but
+        // configfs strings need a serial NOW, so the gadget starts with the
+        // given/default one (ds4ctl passes the pad MAC+1) and 0x12/0x81
+        // answers already use it consistently.
+        bridge.init(opt.bridge_socket,
+                    /*on_input=*/[&hid](const std::uint8_t rpt[64]) { hid.queue_report(rpt); },
+                    /*on_pad_info=*/[](bool usb, const std::uint8_t mac[6]) {
+                        LOGI(kTag, "daemon pad: transport=%s mac=%02x:%02x:%02x:%02x:%02x:%02x",
+                             usb ? "USB" : "BT", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+                    },
+                    /*on_pad_gone=*/[]() {
+                        LOGW(kTag, "daemon pad gone — gadget stays up, reports neutral");
+                    });
+        hid.init(opt.descriptor == "vigem", opt.serial, &counters,
+                 [&bridge](const std::uint8_t* data, std::size_t len) {
+                     bridge.send_output(data, len); // ep2 → daemon → pad
+                 });
+    } else {
+        hid.init(opt.descriptor == "vigem", opt.serial, &counters,
+                 [&pad](const std::uint8_t* data, std::size_t len) {
+                     pad.apply_ds4_output(data, len); // ep2 → pad directly
+                 });
+        pad.init([&hid](const std::uint8_t rpt[64]) { hid.queue_report(rpt); });
+    }
 
     if (!hid.open_endpoints(kFfsMount)) {
         LOGE(kTag, "endpoint open failed — stopping");
     } else {
         hid.start_threads();
-        pad.start(); // T4: evdev reader feeding serialized DS4 reports to ep1
+        if (opt.bridge) {
+            bridge.start(); // Phase 2: daemon streams INPUT frames
+        } else {
+            pad.start();    // Phase 1: local evdev reader
+        }
         serve_loop(ep0, udc, hid, counters, pad);
 
-        pad.stop(); // joins the reader before gadget teardown
+        if (opt.bridge) {
+            bridge.stop();
+        } else {
+            pad.stop(); // joins the reader before gadget teardown
+        }
         // Shutdown order (kernel-lifecycle-correct): unbind the UDC first so
         // ffs endpoint IO dies and the reader thread unblocks, THEN join.
         teardown_unbind();
@@ -797,13 +833,15 @@ std::optional<Options> parse_opts(int argc, char** argv, int start_at, std::stri
             }
         }
         else if (a == "--udc" && i + 1 < argc) o.udc = argv[++i];
+        else if (a == "--bridge") o.bridge = true;
+        else if (a == "--bridge-socket" && i + 1 < argc) o.bridge_socket = argv[++i];
         else { err = "unknown option: " + a; return std::nullopt; }
     }
     if (o.serial.size() != 12 || o.serial.find_first_not_of("0123456789abcdef") != std::string::npos) {
         err = "--serial must be a MAC address (aa:bb:cc:dd:ee:ff)";
         return std::nullopt;
     }
-    if (o.serial == "aabbccddeeff") {
+    if (o.serial == "aabbccddeeff" && !o.bridge) {
         LOGW(kTag, "no --serial given: placeholder identity aabbccddeeff in use");
     }
     return o;

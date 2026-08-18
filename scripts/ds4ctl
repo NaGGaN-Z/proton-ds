@@ -32,6 +32,10 @@ SIGTERM_GRACE=2       # секунд ждать после SIGTERM перед SI
 GADGET_SHIM="${PDS_GADGET_SHIM:-/usr/bin/gadget-shim}"
 GADGET_LOG=/var/log/gadget-shim.log
 GADGET_PIDFILE=/run/gadget-shim.pid
+# Bridge mode (Phase 2): daemon owns the pad (BT-capable), shim only forwards.
+BRIDGE_DAEMON="${PDS_BRIDGE_DAEMON:-/usr/bin/ds4linux-daemon}"
+BRIDGE_SOCKET=/run/ds4linux-bridge.sock
+BRIDGE_DAEMON_LOG=/var/log/ds4linux-bridge.log
 
 # DualSense (real) VID:PID — то, что прячем
 REAL_VENDOR=054c
@@ -354,15 +358,42 @@ cmd_gadget_start() {
 
     gadget_detect_patched_winebus
 
-    local serial="" desc="real"
+    local serial="" desc="real" use_bridge=no
     local args=()
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --serial)     serial="$2"; shift 2 ;;
             --descriptor) desc="$2"; shift 2 ;;
+            --bridge)     use_bridge=yes; shift ;;
             *) c_err "unknown option: $1"; return 64 ;;
         esac
     done
+
+    if [[ "$use_bridge" == yes ]]; then
+        if [[ ! -x "$BRIDGE_DAEMON" ]]; then
+            c_err "bridge daemon not found: $BRIDGE_DAEMON"
+            c_err "  likely cause: ds4linux fork not installed"
+            c_err "  what to do:   build the fork, install to /usr/bin/ds4linux-daemon"
+            c_err "                or set PDS_BRIDGE_DAEMON=<path>"
+            return 2
+        fi
+        if pgrep -x ds4linux-daemon >/dev/null 2>&1; then
+            c_warn "ds4linux-daemon already running — stopping it first"
+            cmd_stop >/dev/null 2>&1 || pkill -x ds4linux-daemon
+            sleep 1
+        fi
+        echo "Starting ds4linux-daemon --gadget-bridge (logging to $BRIDGE_DAEMON_LOG)..."
+        : > "$BRIDGE_DAEMON_LOG"
+        setsid "$BRIDGE_DAEMON" --gadget-bridge >"$BRIDGE_DAEMON_LOG" 2>&1 &
+        sleep 1
+        if ! pgrep -x ds4linux-daemon >/dev/null 2>&1; then
+            c_err "bridge daemon exited early. Last log:"
+            tail -10 "$BRIDGE_DAEMON_LOG" >&2
+            return 2
+        fi
+        c_ok "Bridge daemon up (mode: gadget-bridge)"
+    fi
+
     if [[ -z "$serial" ]]; then
         if ! serial="$(gadget_pad_serial)"; then
             c_warn "No DualSense found — using placeholder identity aabbccddeeff."
@@ -370,11 +401,18 @@ cmd_gadget_start() {
         fi
     fi
 
-    echo "Starting gadget-shim (serial $serial, descriptor $desc)..."
-    "$GADGET_SHIM" start --serial "$serial" --descriptor "$desc"
+    echo "Starting gadget-shim (serial $serial, descriptor $desc$( [[ "$use_bridge" == yes ]] && echo ', bridge' ))..."
+    if [[ "$use_bridge" == yes ]]; then
+        "$GADGET_SHIM" start --serial "$serial" --descriptor "$desc" --bridge
+    else
+        "$GADGET_SHIM" start --serial "$serial" --descriptor "$desc"
+    fi
     local rc=$?
     if [[ $rc -ne 0 ]]; then
         c_err "gadget-shim start failed (rc=$rc); see $GADGET_LOG"
+        if [[ "$use_bridge" == yes ]]; then
+            pkill -x ds4linux-daemon 2>/dev/null
+        fi
         return $rc
     fi
 
@@ -409,6 +447,12 @@ cmd_gadget_stop() {
     fi
     "$GADGET_SHIM" stop
     local rc=$?
+    # Stop the bridge daemon too if it is running in gadget-bridge mode
+    if pgrep -f "ds4linux-daemon --gadget-bridge" >/dev/null 2>&1; then
+        pkill -x ds4linux-daemon 2>/dev/null
+        sleep 0.5
+        c_ok "Bridge daemon stopped"
+    fi
     restore_real_dualsense
     if [[ $rc -eq 0 ]]; then
         c_ok "Gadget stopped, real DualSense restored"
@@ -447,9 +491,13 @@ Usage:
   sudo ds4ctl log [N]         Tail last N lines of daemon log (default 50)
 
 Gadget path (E3 — stock Proton, zero wine patches):
-  sudo ds4ctl gadget start [--serial <MAC>] [--descriptor real|vigem]
+  sudo ds4ctl gadget start [--serial <MAC>] [--descriptor real|vigem] [--bridge]
   sudo ds4ctl gadget stop
   ds4ctl gadget status
+
+  --bridge: Phase 2 — the ds4linux daemon owns the pad (BT-capable, PR#3
+            translations) and streams input over /run/ds4linux-bridge.sock;
+            the shim only forwards. Adds rumble/lightbar via the daemon.
 
 What this wrapper does on top of ds4linux-daemon:
   1. Hides real DualSense /dev/hidraw* from winebus (chmod 000) so wine/Proton

@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-SOURCES=(gadget_shim.cpp hid_core.cpp ds_translate.cpp pad_input.cpp)
+SOURCES=(gadget_shim.cpp hid_core.cpp ds_translate.cpp pad_input.cpp bridge.cpp)
 OUT=gadget-shim
 
 CXX="${CXX:-g++}"
