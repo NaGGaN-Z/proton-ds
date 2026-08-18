@@ -90,6 +90,12 @@
 
 ## Backlog / research
 
+- [ ] **Renaming decision (open, discussed 2026-08-18)**: "proton-ds"
+      describes the v0.1 method (patching Proton); the gadget path never
+      touches Proton. Candidate: **doppelganger** (repo) + `doppel`
+      (CLI, ds4ctl stays as a transition alias); runner-ups: ps-glyphs,
+      dualsense-ds4. Do the rename BEFORE wide launch (repo redirect is
+      free, but naming after adoption is not).
 - [ ] Profile engine: gadget topology as a generic "virtual USB HID
       device" framework (identity profiles + input sources) — the E3
       shim is one profile (DS4); others (DS3, Switch Pro?) need
