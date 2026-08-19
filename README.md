@@ -67,10 +67,10 @@ Design notes (hard-won, see `docs/SOLUTION.md` → E3):
 - feature 0x12 answers with a **zero MAC**: bluez's sixaxis plugin reads
   it on real-looking addresses and opens kernel BT pairing sessions —
   repeated stack cycles can deadlock the kernel (fixed, stress-verified).
-  Known side effect: each stack start leaves one bluez bond at
-  `00:00:00:00:00:00` ("Wireless Controller", `CablePairing=true`) — a
-  harmless pending-auth ghost that KDE shows and won't delete from the
-  UI. Manual cleanup (stack down):
+  Known side effect: the FIRST stack start pops a KDE auth dialog for
+  "Wireless Controller"; clicking Allow leaves one bluez bond at
+  `00:00:00:00:00:00` (harmless pending-auth ghost, once per machine —
+  later starts skip the dialog). Manual cleanup (stack down):
   `systemctl restart bluetooth && bluetoothctl remove 00:00:00:00:00:00`
 - DualSense output report is **63 bytes** (USB) — 48-byte writes light
   the bar partially and never rumble; rumble needs `valid_flag2@39=0x04`

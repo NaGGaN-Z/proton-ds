@@ -47,17 +47,23 @@ Identity notes (empirically pinned):
   `sixaxis: setting up new device` seconds before each death). Zero
   address → harmless pending D-Bus auth, no kernel session. Wine gates
   on the transfer succeeding, not the value.
-- **Ghost bond artifact (cost of the zero MAC)**: the pending sixaxis
-  auth persists as a bluez bond directory
-  `/var/lib/bluetooth/<adapter>/00:00:00:00:00:00/` (`Name=Wireless
-  Controller`, `CablePairing=true`). Properties: harmless to the kernel
-  (that was the fix), survives reboots, stacks as at most ONE entry per
-  machine (the MAC is constant), and KDE's Bluetooth KCM lists it as a
-  paired "Wireless Controller" that neither connects nor deletes from
-  the UI (bluez keeps it mid-bond). Pre-fix shims that answered with
-  per-epoch MACs (real MAC, MAC+1, …) left one ghost per epoch —
-  distinguishable from the real pad's bond only by MAC (the real pad's
-  address ends :B7-style; check `ls /var/lib/bluetooth/<adapter>/`).
+- **Ghost bond artifact (cost of the zero MAC)**: on each FIRST stack
+  start (no existing ghost) the pending sixaxis auth pops a KDE
+  authorization dialog ("Wireless Controller requests access"). The
+  ghost bond directory
+  `/var/lib/bluetooth/<adapter>/00:00:00:00:00:00/` is created the
+  moment the user clicks Allow — bluez writes the bond (Name=Wireless
+  Controller, CablePairing=true, Trusted=true) BEFORE validating the
+  address, then logs `Failed to add device 00:00:00:00:00:00: Invalid
+  Parameters (0x0d)` — expected signature, the ghost persists anyway.
+  Verified live 2026-08-19: enumeration alone creates nothing; the
+  bond's mtime == the Allow click. Because the stored bond is Trusted,
+  subsequent stack starts should skip the dialog (popup is once per
+  machine). Properties: harmless to the kernel (that was the fix),
+  survives reboots, stacks as at most ONE entry per machine (constant
+  MAC). Pre-fix shims that answered with per-epoch MACs (real MAC,
+  MAC+1, …) left one ghost per epoch — distinguishable from the real
+  pad's bond only by MAC; check `ls /var/lib/bluetooth/<adapter>/`.
   Cleanup with the stack DOWN:
   `systemctl restart bluetooth && bluetoothctl remove 00:00:00:00:00:00`
   (repeat for any stale MAC+1 ghosts; never touch the real pad's MAC).
