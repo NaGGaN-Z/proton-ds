@@ -80,18 +80,19 @@ Design notes (hard-won, see `docs/SOLUTION.md` → E3):
 
 The BT bridge path (physical pad over Bluetooth + gadget) is fully
 functional — input, rumble, lightbar all work (BT output encoding
-fixed & hardware-verified 2026-08-19). BUT on our reference machine
-the whole system can hard-freeze with the stack up: 8 freezes over 2
+fixed & hardware-verified 2026-08-19). BUT on one test machine the
+whole system could hard-freeze with the stack up: 8 freezes over 2
 days, all with the stack running (idle, load, or chat — presence, not
 activity, correlates). Forensics (live netconsole, armed NMI+soft
 watchdogs, panic=10, heartbeat) show the death is BELOW the software
 layer: kernel printk, SysRq, NMI and watchdogs all stop in the same
-instant with no panic — consistent with SMM/firmware on the board
-(ASRock A520M K V2, BIOS FB 2024-02, stock clocks). USB-cable sessions
-have not shown a single freeze. Status: open — A/B testing without the
-stack, BIOS update pending. **Until resolved: prefer the USB path for
-the pad; treat BT mode as experimental.** Details:
-`.ai-factory/INCIDENT-2026-08-18-freeze.md` (in the ops repo).
+instant with no panic — consistent with SMM/firmware on that board
+(stock clocks, vendor BIOS from 2024-02). Whether it is board-specific
+or reproducible elsewhere is untested. USB-cable sessions have not
+shown a single freeze. Status: open — A/B testing without the stack,
+BIOS update pending on the affected machine.
+**Until resolved: prefer the USB path for the pad; treat BT mode as
+experimental.**
 
 ## Anti-pattern: dual-mode (both real pad and gadget visible)
 
