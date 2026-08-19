@@ -90,6 +90,16 @@
 
 ## Backlog / research
 
+- [ ] **BT-bridge conservative profile (contingency — build if the
+      freeze survives the BIOS update)**: the solution must not depend
+      on users having fresh AGESA. Knobs to try, cheapest first:
+      input-report coalescing (forward at ~125 Hz instead of the pad's
+      full stream — games poll at 60-120 Hz anyway, drop intermediates),
+      lazy output re-send (refresh only on change + min interval),
+      optional `--conservative` flag for ds4ctl. Validate on the only
+      affected machine we have (A520M K V2, pre-F7a BIOS preserved in
+      the "breaks" state until the profile is proven).
+
 - [ ] **Uninstall / stop must clean bluez ghosts**: every stack start
       leaves a pending-auth bond at `00:00:00:00:00:00` (zero-MAC side
       effect, see SOLUTION.md "Ghost bond artifact"); pre-fix eras may
