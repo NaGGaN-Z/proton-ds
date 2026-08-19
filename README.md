@@ -76,6 +76,23 @@ Design notes (hard-won, see `docs/SOLUTION.md` → E3):
   the bar partially and never rumble; rumble needs `valid_flag2@39=0x04`
   (vibration_v2 pads) and ONE combined report per effect update
 
+## Known issue: Bluetooth bridge mode can hard-freeze the machine (UNDER INVESTIGATION)
+
+The BT bridge path (physical pad over Bluetooth + gadget) is fully
+functional — input, rumble, lightbar all work (BT output encoding
+fixed & hardware-verified 2026-08-19). BUT on our reference machine
+the whole system can hard-freeze with the stack up: 8 freezes over 2
+days, all with the stack running (idle, load, or chat — presence, not
+activity, correlates). Forensics (live netconsole, armed NMI+soft
+watchdogs, panic=10, heartbeat) show the death is BELOW the software
+layer: kernel printk, SysRq, NMI and watchdogs all stop in the same
+instant with no panic — consistent with SMM/firmware on the board
+(ASRock A520M K V2, BIOS FB 2024-02, stock clocks). USB-cable sessions
+have not shown a single freeze. Status: open — A/B testing without the
+stack, BIOS update pending. **Until resolved: prefer the USB path for
+the pad; treat BT mode as experimental.** Details:
+`.ai-factory/INCIDENT-2026-08-18-freeze.md` (in the ops repo).
+
 ## Anti-pattern: dual-mode (both real pad and gadget visible)
 
 Don't hide-and-seek: if the real DualSense and the gadget DS4 are both
