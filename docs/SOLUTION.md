@@ -47,6 +47,22 @@ Identity notes (empirically pinned):
   `sixaxis: setting up new device` seconds before each death). Zero
   address → harmless pending D-Bus auth, no kernel session. Wine gates
   on the transfer succeeding, not the value.
+- **Ghost bond artifact (cost of the zero MAC)**: the pending sixaxis
+  auth persists as a bluez bond directory
+  `/var/lib/bluetooth/<adapter>/00:00:00:00:00:00/` (`Name=Wireless
+  Controller`, `CablePairing=true`). Properties: harmless to the kernel
+  (that was the fix), survives reboots, stacks as at most ONE entry per
+  machine (the MAC is constant), and KDE's Bluetooth KCM lists it as a
+  paired "Wireless Controller" that neither connects nor deletes from
+  the UI (bluez keeps it mid-bond). Pre-fix shims that answered with
+  per-epoch MACs (real MAC, MAC+1, …) left one ghost per epoch —
+  distinguishable from the real pad's bond only by MAC (the real pad's
+  address ends :B7-style; check `ls /var/lib/bluetooth/<adapter>/`).
+  Cleanup with the stack DOWN:
+  `systemctl restart bluetooth && bluetoothctl remove 00:00:00:00:00:00`
+  (repeat for any stale MAC+1 ghosts; never touch the real pad's MAC).
+  `ds4ctl gadget stop` / uninstall MUST do this automatically — see
+  ROADMAP.
 - `dummy_udc.0/state` sticks at `configured` after clean unbind (quirk);
   the real unbind marker is the gadget hidraw disappearing + dmesg
   `USB disconnect`.

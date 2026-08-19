@@ -90,6 +90,14 @@
 
 ## Backlog / research
 
+- [ ] **Uninstall / stop must clean bluez ghosts**: every stack start
+      leaves a pending-auth bond at `00:00:00:00:00:00` (zero-MAC side
+      effect, see SOLUTION.md "Ghost bond artifact"); pre-fix eras may
+      have left MAC+1 ghosts. `ds4ctl gadget stop` and the uninstall
+      path should run, with bluetoothd running and the stack down:
+      `bluetoothctl remove 00:00:00:00:00:00` (+ restart bluetooth if
+      the remove is refused), and sweep bonds whose MAC matches
+      gadget-era serials but not the real pad.
 - [ ] **Renaming decision (open, discussed 2026-08-18)**: "proton-ds"
       describes the v0.1 method (patching Proton); the gadget path never
       touches Proton. Candidate: **doppelganger** (repo) + `doppel`
