@@ -92,16 +92,19 @@
 
 - [ ] **BT-bridge conservative profile (contingency — build if the
       freeze survives the BIOS update)**: the solution must not depend
-      on users having fresh AGESA. Knobs to try, cheapest first:
-      input-report coalescing (fixed-tick forward of the LATEST report
-      at ~125 Hz — note: a byte-diff filter is useless for input, the
-      IMU noise makes every report "changed" even at rest; the BT stream
-      is a flat 250 Hz metronome 24/7 while connected), lazy output
-      re-send (diff IS valid here — lightbar/rumble change rarely; min
-      16 ms interval), optional `--conservative` flag for ds4ctl.
-      Validate on the only affected machine we have (A520M K V2,
-      pre-F7a BIOS preserved in the "breaks" state until the profile
-      is proven).
+      on users having fresh AGESA. Design — hybrid gate on input
+      reports: fixed-tick coalescing (latest-report-at-~125 Hz) PLUS a
+      noise-calibrated deadband (NOT a byte diff — the IMU noise floor
+      makes every report "changed" at rest; instead per-axis EMA of
+      |delta| with threshold k×EMA: buttons exact-diff, sticks small
+      floor, gyro/accel adaptive deadband). At rest the stream drops to
+      near zero — which specifically tests the "flat 250 Hz metronome"
+      freeze hypothesis (idle death #4 had the pad connected and
+      untouched). Lazy output re-send (diff IS valid there —
+      lightbar/rumble change rarely; min 16 ms interval). Optional
+      `--conservative` flag for ds4ctl. Validate on the only affected
+      machine we have (A520M K V2, pre-F7a BIOS preserved in the
+      "breaks" state until the profile is proven).
 
 - [ ] **Uninstall / stop must clean bluez ghosts**: every stack start
       leaves a pending-auth bond at `00:00:00:00:00:00` (zero-MAC side
