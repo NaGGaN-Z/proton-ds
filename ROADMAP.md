@@ -90,6 +90,15 @@
 
 ## Backlog / research
 
+- [ ] **Remove the conservative gate after the freeze verdict is in.**
+      Proven NOT to fix the freeze (#11 died with the stream choked
+      24×), its input filter is broken (EMA floor swallows real input),
+      and it has no alternative purpose (no battery effect — the pad
+      transmits regardless; host savings are microscopic). Pure
+      diagnostic artifact of the incident hunt. Action: strip the gate
+      code from the daemon + the --conservative flag from ds4ctl once
+      the TESTVID/BIOS experiments name the culprit.
+
 - [ ] **BT-bridge conservative profile (contingency — build if the
       freeze survives the BIOS update)**: the solution must not depend
       on users having fresh AGESA. Design — hybrid gate on input
