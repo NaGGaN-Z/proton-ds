@@ -153,8 +153,12 @@ void usage(std::FILE* out) {
         "exit codes: 0 ok, 2 usage/IO, 10 already started, 11 already stopped\n");
 }
 
-bool gate_modules(std::string& why) {
+bool gate_modules(std::string& why, bool skip_dummy_hcd) {
     for (const char* mod : {"dummy_hcd", "libcomposite", "usb_f_fs"}) {
+        if (skip_dummy_hcd && std::string_view(mod) == "dummy_hcd") {
+            LOGD(kTag, "module gate skip (alternative UDC loaded): %s", mod);
+            continue;
+        }
         LOGD(kTag, "modprobe %s", mod);
         int rc = ::system((std::string("/usr/bin/modprobe ") + mod + " >/dev/null 2>&1").c_str());
         (void)rc;
@@ -677,8 +681,20 @@ int cmd_start(const Options& opt) {
         return kExitUsageIo;
     }
 
+    // U-1: with an alternative UDC driver already loaded (e.g. pds_udc),
+    // dummy_hcd is not required — don't gate on it (pick_udc will bind ours)
+    bool have_alt_udc = false;
+    {
+        std::error_code ec;
+        for (auto& e : fs::directory_iterator("/sys/class/udc", ec)) {
+            if (e.path().filename().string().rfind("dummy", 0) != 0) {
+                have_alt_udc = true;
+                break;
+            }
+        }
+    }
     std::string why;
-    if (!gate_modules(why) || !ensure_configfs(why)) {
+    if (!gate_modules(why, have_alt_udc) || !ensure_configfs(why)) {
         std::fprintf(stderr, "ERROR: %s\n  action: install kernel modules (dummy_hcd, "
                              "libcomposite, usb_f_fs) or mount configfs manually\n",
                      why.c_str());

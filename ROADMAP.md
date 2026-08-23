@@ -90,18 +90,28 @@
 
 ## Backlog / research
 
-- [ ] **U-1: own soft-UDC (patched dummy_hcd) — the last free experiment
-      before a board swap.** Freeze #13 (full 250 Hz stream, BIOS FFc,
-      +20 min) alongside #11 (choked 10/s, BIOS FB, +2.5 h) makes the
-      death invariant to BOTH axes we could vary (traffic, BIOS). The
-      one component never varied across all 13 freezes: the dummy_hcd
-      circuit itself (its 1 kHz SOF/timer mechanics × live BT session).
-      Plan: copy dummy_hcd (~2k lines), swap its frame timer for a
-      configurable hrtimer tick (125 Hz / lazy), build out-of-tree,
-      run the BT-day matrix on it. Outcome: survives → the board swap
-      might NOT cure it (timer-pattern bug — fix ships in our code);
-      dies → chipset/board confirmed, B550 closes it. Cost: a day,
-      zero rubles — do this BEFORE ordering the board.
+- [ ] **U-1: own soft-UDC (patched dummy_hcd) — PAUSED 2026-08-23
+      (gameplay-unusable, freeze question unresolved).** Build shipped:
+      pds_udc = dummy_hcd clone (v7.1) renamed + `pds_tick_us` module
+      param (default 8000 us vs stock 125 us); out-of-tree build
+      (clang, CachyOS kernel); shim: `--udc` override + gate skips
+      dummy_hcd when an alternative UDC is loaded; ds4ctl passes
+      `--udc` through. Results: +2.5 h on the 125 Hz tick with zero
+      freezes (vs +20 min full-stream death #13 on stock) — the
+      timer hypothesis SURVIVED but is not proven (no death on our
+      circuit yet). Gameplay verdict: FAIL — pad input lags seconds
+      during active play ("lives its own life"); an ep1 latest-wins
+      throttle (one ffs write per tick) did NOT cure it, so the
+      unbounded-kernel-FIFO diagnosis was wrong or incomplete.
+      Unresolved candidates for the lag: 8 ms tick fundamentally too
+      slow for live input; latency hiding elsewhere in the chain
+      (bridge/daemon/BT); throttle pacing bug. Next steps if resumed:
+      bisect the tick (4000/2000/1000 us — modprobe param, no
+      rebuild), instrument end-to-end latency (daemon ts vs evdev ts),
+      then re-run the freeze matrix only at a playable tick. Artifacts:
+      primepc ~/u1b (pds_udc.c, Makefile, .ko, shim, ds4ctl),
+      /usr/bin/gadget-shim.preU1(.preU1b) backups; module unloaded,
+      stack down, machine back on stock pad.
 
 - [ ] **Remove the conservative gate after the freeze verdict is in.**
       Proven NOT to fix the freeze (#11 died with the stream choked

@@ -17,6 +17,7 @@
 
 #include <cerrno>
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <fcntl.h>
 #include <poll.h>
@@ -26,6 +27,23 @@ namespace pds::gadget {
 
 namespace {
 constexpr const char* kTag = "hid";
+
+// U-1: with a rate-limited UDC (pds_udc) the host drains ep1 at 1/tick
+// reports per second. The kernel-side FunctionFS FIFO is unbounded:
+// writing faster than the drain rate grows playback latency without
+// bound (observed: seconds-lag "pad lives its own life" during active
+// play at 200 Hz source vs 125 Hz drain). Pace ffs writes to one per
+// tick and always send the freshest report. Stock dummy_hcd drains at
+// ~8 kHz — no throttle needed there (returns 0).
+int load_ffs_throttle_us() {
+    FILE* f = std::fopen("/sys/module/pds_udc/parameters/pds_tick_us", "r");
+    if (!f) return 0;
+    int v = 0;
+    int n = std::fscanf(f, "%d", &v);
+    std::fclose(f);
+    if (n != 1 || v < 125 || v > 100000) return 0;
+    return v;
+}
 } // namespace
 
 void HidCore::init(bool use_vigem_descriptor, const std::string& serial_hex,
@@ -208,16 +226,32 @@ void HidCore::writer_loop() {
     // a report arrived pre-ENABLE, the writer died after 10 ms of retries,
     // and every subsequent report was dropped).
     int backoff_us = 1000;
+    const int throttle_us = load_ffs_throttle_us();
+    if (throttle_us)
+        LOGI(kTag, "ep1 throttle: %d us (pds_udc tick) — latest-wins pacing", throttle_us);
+    auto last_write = std::chrono::steady_clock::now() - std::chrono::microseconds(throttle_us);
     while (io_running_) {
-        std::vector<std::uint8_t> rpt;
         {
             std::unique_lock<std::mutex> lk(qm_);
             qcv_.wait_for(lk, std::chrono::milliseconds(200),
                           [&] { return !queue_.empty() || !io_running_; });
             if (!io_running_) break;
             if (queue_.empty()) continue;
-            rpt = std::move(queue_.front());
-            queue_.pop_front();
+        }
+        // latest-wins: sleep into the next tick slot first, then take the
+        // freshest report — anything queued during the wait is superseded
+        if (throttle_us) {
+            const auto slot = last_write + std::chrono::microseconds(throttle_us);
+            if (std::chrono::steady_clock::now() < slot)
+                std::this_thread::sleep_until(slot);
+        }
+        std::vector<std::uint8_t> rpt;
+        {
+            std::lock_guard<std::mutex> lk(qm_);
+            while (!queue_.empty()) { // coalesce: keep only the newest
+                rpt = std::move(queue_.front());
+                queue_.pop_front();
+            }
         }
         bool sent = false;
         while (io_running_ && !sent) {
@@ -225,6 +259,7 @@ void HidCore::writer_loop() {
             if (w > 0) {
                 sent = true;
                 if (counters_) ++counters_->ep1_writes;
+                last_write = std::chrono::steady_clock::now();
                 backoff_us = 1000; // reset after success
                 break;
             }

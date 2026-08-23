@@ -358,7 +358,7 @@ cmd_gadget_start() {
 
     gadget_detect_patched_winebus
 
-    local serial="" desc="real" use_bridge=no conservative=no testvid=no
+    local serial="" desc="real" use_bridge=no conservative=no testvid=no udc=""
     local args=()
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -367,6 +367,7 @@ cmd_gadget_start() {
             --bridge)     use_bridge=yes; shift ;;
             --conservative) conservative=yes; use_bridge=yes; shift ;;
             --testvid)    testvid=yes; shift ;;
+            --udc)        udc="$2"; shift 2 ;;
             *) c_err "unknown option: $1"; return 64 ;;
         esac
     done
@@ -411,13 +412,14 @@ cmd_gadget_start() {
         fi
     fi
 
-    local testvid_flag=""
+    local testvid_flag="" udc_flag=""
     if [[ "$testvid" == yes ]]; then testvid_flag="--testvid"; fi
-    echo "Starting gadget-shim (serial $serial, descriptor $desc$( [[ "$use_bridge" == yes ]] && echo ', bridge' )$( [[ "$testvid" == yes ]] && echo ', TESTVID' ))..."
+    if [[ -n "$udc" ]]; then udc_flag="--udc $udc"; fi
+    echo "Starting gadget-shim (serial $serial, descriptor $desc$( [[ "$use_bridge" == yes ]] && echo ', bridge' )$( [[ "$testvid" == yes ]] && echo ', TESTVID' )$( [[ -n "$udc" ]] && echo ", udc=$udc" ))..."
     if [[ "$use_bridge" == yes ]]; then
-        "$GADGET_SHIM" start --serial "$serial" --descriptor "$desc" --bridge $testvid_flag
+        "$GADGET_SHIM" start --serial "$serial" --descriptor "$desc" --bridge $testvid_flag $udc_flag
     else
-        "$GADGET_SHIM" start --serial "$serial" --descriptor "$desc" $testvid_flag
+        "$GADGET_SHIM" start --serial "$serial" --descriptor "$desc" $testvid_flag $udc_flag
     fi
     local rc=$?
     if [[ $rc -ne 0 ]]; then
