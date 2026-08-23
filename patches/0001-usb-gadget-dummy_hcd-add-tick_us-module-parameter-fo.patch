@@ -1,17 +1,14 @@
-From a01cd3798a5ad746770f321a32edd504c1e9e599 Mon Sep 17 00:00:00 2001
+From 0be4f0752ab8f743f89f50d2786ab46a406e5b6b Mon Sep 17 00:00:00 2001
 From: Mikhail Zubenko <misha.zubenko.01@yandex.ru>
-Date: Sun, 23 Aug 2026 16:50:53 +0000
+Date: Sun, 23 Aug 2026 17:12:49 +0000
 Subject: [PATCH] usb: gadget: dummy_hcd: add tick_us module parameter for
  timer-rate tuning
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
 
 The simulated controller completes URBs on a hrtimer armed at a fixed
 125 us (one high-speed microframe). Against a permanently polled HID
 interrupt endpoint this creates a self-sustaining pendulum at ~8 kHz:
 every completion triggers an immediate resubmit, which rearms the
-timer. The rate is unconditional — it does not depend on traffic.
+timer. The rate is unconditional - it does not depend on traffic.
 
 On timer-rate-sensitive platforms (observed: one consumer AM4 board,
 BIOS current, stock kernel) this pendulum co-existing with a live
@@ -32,12 +29,11 @@ Default keeps the current 125 us behaviour bit-for-bit.
 
 Signed-off-by: Mikhail Zubenko <misha.zubenko.01@yandex.ru>
 ---
----
  drivers/usb/gadget/udc/dummy_hcd.c | 8 +++++++-
  1 file changed, 7 insertions(+), 1 deletion(-)
 
 diff --git a/drivers/usb/gadget/udc/dummy_hcd.c b/drivers/usb/gadget/udc/dummy_hcd.c
-index f479034..b5d29a9 100644
+index c0e40fa..f185b87 100644
 --- a/drivers/usb/gadget/udc/dummy_hcd.c
 +++ b/drivers/usb/gadget/udc/dummy_hcd.c
 @@ -51,7 +51,7 @@
