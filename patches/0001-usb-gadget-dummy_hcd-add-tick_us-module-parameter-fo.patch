@@ -1,0 +1,67 @@
+From a01cd3798a5ad746770f321a32edd504c1e9e599 Mon Sep 17 00:00:00 2001
+From: Mikhail Zubenko <misha.zubenko.01@yandex.ru>
+Date: Sun, 23 Aug 2026 16:50:53 +0000
+Subject: [PATCH] usb: gadget: dummy_hcd: add tick_us module parameter for
+ timer-rate tuning
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The simulated controller completes URBs on a hrtimer armed at a fixed
+125 us (one high-speed microframe). Against a permanently polled HID
+interrupt endpoint this creates a self-sustaining pendulum at ~8 kHz:
+every completion triggers an immediate resubmit, which rearms the
+timer. The rate is unconditional — it does not depend on traffic.
+
+On timer-rate-sensitive platforms (observed: one consumer AM4 board,
+BIOS current, stock kernel) this pendulum co-existing with a live
+Bluetooth session behind the same xHCI controller results in a hard,
+below-software platform hang: printk, SysRq, NMI and both watchdogs
+die in the same instant, with no panic, no MCE, and empty pstore.
+13 occurrences over 5 days, fully reproducible; the same workload
+with the pendulum slowed to 1000 us (this parameter) ran ~8 hours
+with zero hangs, and USB-cable sessions (identical gadget traffic,
+no BT co-existence) never hung.
+
+Nothing else in the driver's behaviour depends on the exact tick:
+the bandwidth model accounts per-frame budget regardless of how
+often frames are simulated, so a larger tick trades latency
+(1 ms added worst case at tick_us=1000) for interrupt-rate headroom.
+
+Default keeps the current 125 us behaviour bit-for-bit.
+
+Signed-off-by: Mikhail Zubenko <misha.zubenko.01@yandex.ru>
+---
+---
+ drivers/usb/gadget/udc/dummy_hcd.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/usb/gadget/udc/dummy_hcd.c b/drivers/usb/gadget/udc/dummy_hcd.c
+index f479034..b5d29a9 100644
+--- a/drivers/usb/gadget/udc/dummy_hcd.c
++++ b/drivers/usb/gadget/udc/dummy_hcd.c
+@@ -51,7 +51,7 @@
+ #define POWER_BUDGET	500	/* in mA; use 8 for low-power port testing */
+ #define POWER_BUDGET_3	900	/* in mA */
+ 
+-#define DUMMY_TIMER_INT_NSECS	125000 /* 1 microframe */
++#define DUMMY_TIMER_INT_NSECS	((u64)tick_us * NSEC_PER_USEC)
+ 
+ static const char	driver_name[] = "dummy_hcd";
+ static const char	driver_desc[] = "USB Host+Gadget Emulator";
+@@ -79,6 +79,12 @@ module_param_named(is_high_speed, mod_data.is_high_speed, bool, S_IRUGO);
+ MODULE_PARM_DESC(is_high_speed, "true to simulate HighSpeed connection");
+ module_param_named(num, mod_data.num, uint, S_IRUGO);
+ MODULE_PARM_DESC(num, "number of emulated controllers");
++
++static unsigned int tick_us = 125;
++module_param(tick_us, uint, 0644);
++MODULE_PARM_DESC(tick_us,
++		"enqueue-to-completion latency of the simulated controller, in microseconds (default 125, one high-speed microframe);"
++		" larger values slow the internal timer pendulum and reduce its interrupt-rate pressure on the host platform");
+ /*-------------------------------------------------------------------------*/
+ 
+ /* gadget side driver data structures */
+-- 
+2.43.0
+
