@@ -90,28 +90,34 @@
 
 ## Backlog / research
 
-- [ ] **U-1: own soft-UDC (patched dummy_hcd) — RESUMED 2026-08-23,
-      posture settled.** Build shipped: pds_udc = dummy_hcd clone (v7.1)
-      renamed + `pds_tick_us` module param; out-of-tree (clang, CachyOS
-      kernel); shim `--udc` override + gate skips dummy_hcd when an
-      alternative UDC is loaded; ds4ctl passes `--udc` through. Run 1
-      (8000 us): +2.5 h zero freezes on the lethal config — timer
-      hypothesis SURVIVED; gameplay seconds-lag → ep1 latest-wins
-      throttle did not cure → FIFO diagnosis wrong. Run 2 (diagnostics:
-      eagain/backoff/coalesced/lat counters): idle+burst probes prove
-      the shim delivers ≤1 tick latency, eagain=0 — lag was NOT in the
-      shim. Run 3 (4000 us = 250 Hz > 197 Hz source): gameplay clean
-      (user verdict: no issues), lat max 5.4 ms, ep2 traffic flowing.
-      **Decisions (2026-08-23):** (1) NO bisect toward stock tick on
-      BT — deliberately not probing where death returns; therapeutic
-      result stands on its own. (2) Final product posture: USB path =
-      stock dummy_hcd (8 kHz, zero freezes ever, no added latency);
-      BT path = pds_udc @ 250 Hz as a MANDATORY component (admission
-      condition, not an option). Remaining validation: evening/night
-      survival on the 250 Hz config → then BT mode exits
-      "experimental" with the pds_udc requirement documented.
-      Artifacts: primepc ~/u1b, /usr/bin/gadget-shim.preU1{,b,c}
-      backups; module loaded pds_tick_us=4000.
+- [ ] **U-1: own soft-UDC (patched dummy_hcd) — VALIDATED-IN-USE
+      2026-08-23, ~8 h zero-freeze across ticks.** Build: pds_udc =
+      dummy_hcd clone (v7.1) renamed + `pds_tick_us` module param;
+      out-of-tree (clang, CachyOS 7.1.5); shim `--udc` override +
+      gate skips dummy_hcd when an alternative UDC is loaded; ds4ctl
+      passes `--udc` through. Timeline: 8000us +2.5 h (gameplay lag →
+      diagnosed as shim pacing, NOT FIFO); 250 us clean gameplay,
+      lat max 5.4 ms; 1000 us current default — smooth touch AND
+      still 8x below the stock 8 kHz pendulum. Cumulative ~8 h on
+      the lethal config with zero freezes (stock record: 2.5 h to
+      death, typical 20-40 min). Touch-bridge overhaul landed in the
+      same window (see ds4linux fork commits b82dc38, 3c9dede,
+      4527b41): byte-33 num_touch_reports fix, Y rescale 1079→941,
+      BTN_TOUCH-only up/down hysteresis, stable slot ids, TWO-FINGER
+      multitouch (per-MT-slot state, both DS4 points packed) —
+      two-finger scroll through the bridge now matches the original.
+      Findings (not bugs): right-edge no-scroll = clickpads default
+      to two-finger scroll in libinput (edge-scroll off, can be
+      enabled in KDE settings); outermost sensor band is a physical
+      guard zone. Open: naming both touch nodes (udev), overnight
+      survival watch → then BT exits "experimental" with pds_udc as
+      the documented admission condition for affected boards.
+      Packaging: DKMS package planned (kernel-module — no plain
+      installer possible; recompile per kernel, clang for CachyOS);
+      upstream module_param patch to LKML linux-usb as the "real"
+      long-term fix candidate. Posture unchanged: USB = stock dummy_hcd
+      (always), BT = pds_udc (affected boards). Artifacts: primepc
+      ~/u1b, backups .preU1{,b,c}.
 
 - [ ] **Remove the conservative gate after the freeze verdict is in.**
       Proven NOT to fix the freeze (#11 died with the stream choked

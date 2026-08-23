@@ -76,7 +76,7 @@ Design notes (hard-won, see `docs/SOLUTION.md` → E3):
   the bar partially and never rumble; rumble needs `valid_flag2@39=0x04`
   (vibration_v2 pads) and ONE combined report per effect update
 
-## Known issue: BT bridge + gadget hard-freezes the machine (BOARD-CLASS, verdict 2026-08-23)
+## Known issue: BT bridge + gadget hard-freeze — MITIGATED on the affected board (2026-08-23, watch in progress)
 
 The BT bridge path is fully functional — input, rumble, lightbar all
 work (encoding kernel-verified). BUT co-existing with the gadget it
@@ -92,9 +92,18 @@ telemetry to the last second. USB-cable stack sessions: zero freezes
 ever; a plain DualSense over BT (no gadget): zero freezes. Verdict:
 the interaction lives in the board's chipset circuit or its
 implementation — not in AGESA, not in software we control. Next test:
-a patched soft-UDC (lower timer rate), then a board swap.
-**Until then: the USB path is the default; BT bridge is experimental**
-(on affected boards expect ~20 min–2.5 h uptime; use consciously).
+**Mitigation found (same day): pds_udc — a rate-limited dummy_hcd
+clone** (one module param, `pds_tick_us`; stock emulates a 125 us
+microframe pendulum ≈ 8 kHz; ours defaults to 1000 us). On the
+affected board the lethal config has now run ~8 h cumulative with
+ZERO freezes (stock record before death: 20 min–2.5 h), while
+delivering full gameplay AND two-finger multitouch through the
+bridge. pds_udc is a kernel module: no plain installer — DKMS
+package planned; until then it is a build-on-target artifact for
+affected boards only. USB-cable sessions keep using the stock
+dummy_hcd and need nothing. An upstream `module_param` patch is the
+long-term fix candidate. Overnight validation pending; until it
+lands, BT + stock dummy_hcd stays forbidden on affected boards.
 
 ## Anti-pattern: dual-mode (both real pad and gadget visible)
 
