@@ -90,6 +90,19 @@
 
 ## Backlog / research
 
+- [ ] **U-1: own soft-UDC (patched dummy_hcd) — the last free experiment
+      before a board swap.** Freeze #13 (full 250 Hz stream, BIOS FFc,
+      +20 min) alongside #11 (choked 10/s, BIOS FB, +2.5 h) makes the
+      death invariant to BOTH axes we could vary (traffic, BIOS). The
+      one component never varied across all 13 freezes: the dummy_hcd
+      circuit itself (its 1 kHz SOF/timer mechanics × live BT session).
+      Plan: copy dummy_hcd (~2k lines), swap its frame timer for a
+      configurable hrtimer tick (125 Hz / lazy), build out-of-tree,
+      run the BT-day matrix on it. Outcome: survives → the board swap
+      might NOT cure it (timer-pattern bug — fix ships in our code);
+      dies → chipset/board confirmed, B550 closes it. Cost: a day,
+      zero rubles — do this BEFORE ordering the board.
+
 - [ ] **Remove the conservative gate after the freeze verdict is in.**
       Proven NOT to fix the freeze (#11 died with the stream choked
       24×), its input filter is broken (EMA floor swallows real input),

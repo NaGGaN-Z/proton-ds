@@ -76,23 +76,25 @@ Design notes (hard-won, see `docs/SOLUTION.md` → E3):
   the bar partially and never rumble; rumble needs `valid_flag2@39=0x04`
   (vibration_v2 pads) and ONE combined report per effect update
 
-## Known issue: Bluetooth bridge mode can hard-freeze the machine (UNDER INVESTIGATION)
+## Known issue: BT bridge + gadget hard-freezes the machine (BOARD-CLASS, verdict 2026-08-23)
 
-The BT bridge path (physical pad over Bluetooth + gadget) is fully
-functional — input, rumble, lightbar all work (BT output encoding
-fixed & hardware-verified 2026-08-19). BUT on one test machine the
-whole system could hard-freeze with the stack up: 8 freezes over 2
-days, all with the stack running (idle, load, or chat — presence, not
-activity, correlates). Forensics (live netconsole, armed NMI+soft
-watchdogs, panic=10, heartbeat) show the death is BELOW the software
-layer: kernel printk, SysRq, NMI and watchdogs all stop in the same
-instant with no panic — consistent with SMM/firmware on that board
-(stock clocks, vendor BIOS from 2024-02). Whether it is board-specific
-or reproducible elsewhere is untested. USB-cable sessions have not
-shown a single freeze. Status: open — A/B testing without the stack,
-BIOS update pending on the affected machine.
-**Until resolved: prefer the USB path for the pad; treat BT mode as
-experimental.**
+The BT bridge path is fully functional — input, rumble, lightbar all
+work (encoding kernel-verified). BUT co-existing with the gadget it
+hard-freezes one test machine regardless of everything varied so far:
+traffic intensity (250 Hz full stream or ~10/s choked — dies either
+way), the bluez sixaxis plugin (non-Sony-VID gadget — dies), CPU
+C-states (POLL-only — dies), clocksource, kernel activity (idle, load,
+mid-typing). 13 freezes over 5 days; a BIOS/AGESA update spanning 2.5
+years (2024-02 → 2026-08) did NOT cure it. Instrumentation (netconsole
+beacon, hwlat tracer, armed watchdogs, panic=10) shows an instant
+below-software death with zero precursors — no panic, no trace, clean
+telemetry to the last second. USB-cable stack sessions: zero freezes
+ever; a plain DualSense over BT (no gadget): zero freezes. Verdict:
+the interaction lives in the board's chipset circuit or its
+implementation — not in AGESA, not in software we control. Next test:
+a patched soft-UDC (lower timer rate), then a board swap.
+**Until then: the USB path is the default; BT bridge is experimental**
+(on affected boards expect ~20 min–2.5 h uptime; use consciously).
 
 ## Anti-pattern: dual-mode (both real pad and gadget visible)
 

@@ -94,6 +94,11 @@ struct Options {
     std::string udc;
     bool bridge = false;
     std::string bridge_socket = "/run/ds4linux-bridge.sock";
+    // Freeze-hunt experiment (--testvid): enumerate with a NON-Sony VID
+    // so bluez's sixaxis plugin never fires on the gadget. If the
+    // machine survives a BT-pad session with the testvid gadget up,
+    // the freeze is sixaxis×gadget×live-session (see INCIDENT file).
+    bool testvid = false;
 };
 
 std::string err_str(int e) { return std::string(std::strerror(e)); }
@@ -141,7 +146,7 @@ std::string normalize_serial(const std::string& in) {
 void usage(std::FILE* out) {
     std::fprintf(out,
         "usage: gadget-shim start [--serial <MAC>] [--descriptor real|vigem] [--udc <name>]\n"
-        "                        [--bridge [--bridge-socket <path>]]\n"
+        "                        [--bridge [--bridge-socket <path>]] [--testvid]\n"
         "       gadget-shim stop\n"
         "       gadget-shim status\n"
         "--bridge: daemon owns the pad; input streams from /run/ds4linux-bridge.sock\n"
@@ -309,7 +314,8 @@ bool bring_up(const Options& opt, std::string& udc_out, int& ep0_out, std::strin
     }
 
     for (auto& [name, val] : std::vector<std::pair<const char*, std::string>>{
-             {"idVendor", kVid}, {"idProduct", kPid09cc},
+             {"idVendor", opt.testvid ? std::string("0x1235") : std::string(kVid)},
+             {"idProduct", kPid09cc},
              {"bcdDevice", kBcdDevice}, {"bcdUSB", kBcdUsb}}) {
         if (!write_file(g / name, val + "\n", why)) return false;
     }
@@ -405,8 +411,10 @@ bool bring_up(const Options& opt, std::string& udc_out, int& ep0_out, std::strin
         ::usleep(200000);
     }
     if (!bound) return false;
-    LOGI(kTag, "gadget UP: %s:%s bcdDevice=%s serial=%s udc=%s descriptor=%s",
-         kVid, kPid09cc, kBcdDevice, opt.serial.c_str(), udc->c_str(), opt.descriptor.c_str());
+    LOGI(kTag, "gadget UP: %s:%s bcdDevice=%s serial=%s udc=%s descriptor=%s%s",
+         opt.testvid ? "0x1235" : kVid, kPid09cc, kBcdDevice, opt.serial.c_str(),
+         udc->c_str(), opt.descriptor.c_str(),
+         opt.testvid ? " [TESTVID: sixaxis will not match]" : "");
 
     udc_out = *udc;
     ep0_out = ep0;
@@ -834,6 +842,7 @@ std::optional<Options> parse_opts(int argc, char** argv, int start_at, std::stri
         }
         else if (a == "--udc" && i + 1 < argc) o.udc = argv[++i];
         else if (a == "--bridge") o.bridge = true;
+        else if (a == "--testvid") o.testvid = true;
         else if (a == "--bridge-socket" && i + 1 < argc) o.bridge_socket = argv[++i];
         else { err = "unknown option: " + a; return std::nullopt; }
     }

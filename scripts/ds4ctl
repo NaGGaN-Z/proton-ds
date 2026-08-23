@@ -358,13 +358,15 @@ cmd_gadget_start() {
 
     gadget_detect_patched_winebus
 
-    local serial="" desc="real" use_bridge=no
+    local serial="" desc="real" use_bridge=no conservative=no testvid=no
     local args=()
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --serial)     serial="$2"; shift 2 ;;
             --descriptor) desc="$2"; shift 2 ;;
             --bridge)     use_bridge=yes; shift ;;
+            --conservative) conservative=yes; use_bridge=yes; shift ;;
+            --testvid)    testvid=yes; shift ;;
             *) c_err "unknown option: $1"; return 64 ;;
         esac
     done
@@ -384,14 +386,22 @@ cmd_gadget_start() {
         fi
         echo "Starting ds4linux-daemon --gadget-bridge (logging to $BRIDGE_DAEMON_LOG)..."
         : > "$BRIDGE_DAEMON_LOG"
-        setsid "$BRIDGE_DAEMON" --gadget-bridge >"$BRIDGE_DAEMON_LOG" 2>&1 &
+        local daemon_flags="--gadget-bridge"
+        if [[ "$conservative" == yes ]]; then
+            daemon_flags="$daemon_flags --conservative"
+        fi
+        setsid "$BRIDGE_DAEMON" $daemon_flags >"$BRIDGE_DAEMON_LOG" 2>&1 &
         sleep 1
         if ! pgrep -x ds4linux-daemon >/dev/null 2>&1; then
             c_err "bridge daemon exited early. Last log:"
             tail -10 "$BRIDGE_DAEMON_LOG" >&2
             return 2
         fi
-        c_ok "Bridge daemon up (mode: gadget-bridge)"
+        if [[ "$conservative" == yes ]]; then
+            c_ok "Bridge daemon up (mode: gadget-bridge, CONSERVATIVE gate)"
+        else
+            c_ok "Bridge daemon up (mode: gadget-bridge)"
+        fi
     fi
 
     if [[ -z "$serial" ]]; then
@@ -401,11 +411,13 @@ cmd_gadget_start() {
         fi
     fi
 
-    echo "Starting gadget-shim (serial $serial, descriptor $desc$( [[ "$use_bridge" == yes ]] && echo ', bridge' ))..."
+    local testvid_flag=""
+    if [[ "$testvid" == yes ]]; then testvid_flag="--testvid"; fi
+    echo "Starting gadget-shim (serial $serial, descriptor $desc$( [[ "$use_bridge" == yes ]] && echo ', bridge' )$( [[ "$testvid" == yes ]] && echo ', TESTVID' ))..."
     if [[ "$use_bridge" == yes ]]; then
-        "$GADGET_SHIM" start --serial "$serial" --descriptor "$desc" --bridge
+        "$GADGET_SHIM" start --serial "$serial" --descriptor "$desc" --bridge $testvid_flag
     else
-        "$GADGET_SHIM" start --serial "$serial" --descriptor "$desc"
+        "$GADGET_SHIM" start --serial "$serial" --descriptor "$desc" $testvid_flag
     fi
     local rc=$?
     if [[ $rc -ne 0 ]]; then
