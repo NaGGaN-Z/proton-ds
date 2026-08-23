@@ -298,6 +298,12 @@ void write_status_file(const Counters& c, const std::string& udc, std::int64_t s
     f << "pid=" << ::getpid() << " uptime_s=" << up_s << " udc=" << udc << "\n";
     f << "ep0_events=" << c.ep0_events << " ep0_setup=" << c.ep0_setup
       << " ep1_writes=" << c.ep1_writes << " ep2_reads=" << c.ep2_reads << "\n";
+    const double avg = c.ep1_writes
+        ? static_cast<double>(c.ep1_lat_us_sum) / c.ep1_writes : 0.0;
+    f << "ep1_eagain=" << c.ep1_eagain << " ep1_backoff_ms=" << c.ep1_backoff_ms
+      << " ep1_coalesced=" << c.ep1_coalesced << "\n";
+    f << "ep1_lat_us avg=" << static_cast<unsigned long long>(avg)
+      << " last=" << c.ep1_lat_us_last << " max=" << c.ep1_lat_us_max << "\n";
     if (pad) {
         f << "pad=" << (pad->pad_connected() ? "connected" : "absent")
           << " reports=" << pad->reports() << "\n";

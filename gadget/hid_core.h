@@ -2,6 +2,7 @@
 // proton-ds gadget — HID core: ep0 SETUP dispatcher + ep1/ep2 endpoint threads.
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
@@ -15,6 +16,13 @@ namespace pds::gadget {
 
 struct Counters {
     std::uint64_t ep0_events = 0, ep0_setup = 0, ep1_writes = 0, ep2_reads = 0;
+    // U-1 latency diagnostics (writer thread; benign races for status reads)
+    std::uint64_t ep1_eagain = 0;      // EAGAIN retries (ffs buffer full)
+    std::uint64_t ep1_backoff_ms = 0;  // cumulative backoff sleep
+    std::uint64_t ep1_coalesced = 0;   // reports superseded by newer state
+    std::uint64_t ep1_lat_us_last = 0; // enqueue -> write() success
+    std::uint64_t ep1_lat_us_max = 0;
+    std::uint64_t ep1_lat_us_sum = 0;
 };
 
 class HidCore {
@@ -63,7 +71,11 @@ private:
 
     std::mutex qm_;
     std::condition_variable qcv_;
-    std::deque<std::vector<std::uint8_t>> queue_;
+    struct QueuedReport {
+        std::vector<std::uint8_t> data;
+        std::chrono::steady_clock::time_point enq;
+    };
+    std::deque<QueuedReport> queue_;
     std::uint64_t dropped_ = 0;
 };
 

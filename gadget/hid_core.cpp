@@ -246,25 +246,40 @@ void HidCore::writer_loop() {
                 std::this_thread::sleep_until(slot);
         }
         std::vector<std::uint8_t> rpt;
+        std::chrono::steady_clock::time_point enq{};
         {
             std::lock_guard<std::mutex> lk(qm_);
-            while (!queue_.empty()) { // coalesce: keep only the newest
-                rpt = std::move(queue_.front());
-                queue_.pop_front();
+            if (!queue_.empty()) {
+                const std::size_t n = queue_.size();
+                rpt = std::move(queue_.back().data);
+                enq = queue_.back().enq;
+                queue_.clear();
+                if (counters_ && n > 1) counters_->ep1_coalesced += n - 1;
             }
         }
+        if (rpt.empty()) continue;
         bool sent = false;
         while (io_running_ && !sent) {
             ssize_t w = ::write(ep1_fd_, rpt.data(), rpt.size());
             if (w > 0) {
                 sent = true;
-                if (counters_) ++counters_->ep1_writes;
-                last_write = std::chrono::steady_clock::now();
+                const auto now = std::chrono::steady_clock::now();
+                last_write = now;
+                if (counters_) {
+                    ++counters_->ep1_writes;
+                    const auto lat = static_cast<std::uint64_t>(
+                        std::chrono::duration_cast<std::chrono::microseconds>(now - enq).count());
+                    counters_->ep1_lat_us_last = lat;
+                    counters_->ep1_lat_us_sum += lat;
+                    if (lat > counters_->ep1_lat_us_max) counters_->ep1_lat_us_max = lat;
+                }
                 backoff_us = 1000; // reset after success
                 break;
             }
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                if (counters_) ++counters_->ep1_eagain;
                 ::usleep(backoff_us);
+                if (counters_) counters_->ep1_backoff_ms += backoff_us / 1000;
                 backoff_us = backoff_us < 50000 ? backoff_us * 2 : 50000;
                 continue;
             }
@@ -361,11 +376,15 @@ void HidCore::queue_report(const std::uint8_t rpt[64]) {
         std::lock_guard<std::mutex> lk(qm_);
         if (queue_.size() >= 8) {
             queue_.pop_front(); // drop-oldest: latest state wins
+            if (counters_) ++counters_->ep1_coalesced;
             if (++dropped_ % 100 == 1)
                 LOGW(kTag, "ep1 queue overflow: %llu reports dropped so far",
                      static_cast<unsigned long long>(dropped_));
         }
-        queue_.emplace_back(rpt, rpt + 64);
+        QueuedReport q;
+        q.data.assign(rpt, rpt + 64);
+        q.enq = std::chrono::steady_clock::now();
+        queue_.push_back(std::move(q));
     }
     qcv_.notify_one();
 }

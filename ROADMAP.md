@@ -90,28 +90,28 @@
 
 ## Backlog / research
 
-- [ ] **U-1: own soft-UDC (patched dummy_hcd) — PAUSED 2026-08-23
-      (gameplay-unusable, freeze question unresolved).** Build shipped:
-      pds_udc = dummy_hcd clone (v7.1) renamed + `pds_tick_us` module
-      param (default 8000 us vs stock 125 us); out-of-tree build
-      (clang, CachyOS kernel); shim: `--udc` override + gate skips
-      dummy_hcd when an alternative UDC is loaded; ds4ctl passes
-      `--udc` through. Results: +2.5 h on the 125 Hz tick with zero
-      freezes (vs +20 min full-stream death #13 on stock) — the
-      timer hypothesis SURVIVED but is not proven (no death on our
-      circuit yet). Gameplay verdict: FAIL — pad input lags seconds
-      during active play ("lives its own life"); an ep1 latest-wins
-      throttle (one ffs write per tick) did NOT cure it, so the
-      unbounded-kernel-FIFO diagnosis was wrong or incomplete.
-      Unresolved candidates for the lag: 8 ms tick fundamentally too
-      slow for live input; latency hiding elsewhere in the chain
-      (bridge/daemon/BT); throttle pacing bug. Next steps if resumed:
-      bisect the tick (4000/2000/1000 us — modprobe param, no
-      rebuild), instrument end-to-end latency (daemon ts vs evdev ts),
-      then re-run the freeze matrix only at a playable tick. Artifacts:
-      primepc ~/u1b (pds_udc.c, Makefile, .ko, shim, ds4ctl),
-      /usr/bin/gadget-shim.preU1(.preU1b) backups; module unloaded,
-      stack down, machine back on stock pad.
+- [ ] **U-1: own soft-UDC (patched dummy_hcd) — RESUMED 2026-08-23,
+      posture settled.** Build shipped: pds_udc = dummy_hcd clone (v7.1)
+      renamed + `pds_tick_us` module param; out-of-tree (clang, CachyOS
+      kernel); shim `--udc` override + gate skips dummy_hcd when an
+      alternative UDC is loaded; ds4ctl passes `--udc` through. Run 1
+      (8000 us): +2.5 h zero freezes on the lethal config — timer
+      hypothesis SURVIVED; gameplay seconds-lag → ep1 latest-wins
+      throttle did not cure → FIFO diagnosis wrong. Run 2 (diagnostics:
+      eagain/backoff/coalesced/lat counters): idle+burst probes prove
+      the shim delivers ≤1 tick latency, eagain=0 — lag was NOT in the
+      shim. Run 3 (4000 us = 250 Hz > 197 Hz source): gameplay clean
+      (user verdict: no issues), lat max 5.4 ms, ep2 traffic flowing.
+      **Decisions (2026-08-23):** (1) NO bisect toward stock tick on
+      BT — deliberately not probing where death returns; therapeutic
+      result stands on its own. (2) Final product posture: USB path =
+      stock dummy_hcd (8 kHz, zero freezes ever, no added latency);
+      BT path = pds_udc @ 250 Hz as a MANDATORY component (admission
+      condition, not an option). Remaining validation: evening/night
+      survival on the 250 Hz config → then BT mode exits
+      "experimental" with the pds_udc requirement documented.
+      Artifacts: primepc ~/u1b, /usr/bin/gadget-shim.preU1{,b,c}
+      backups; module loaded pds_tick_us=4000.
 
 - [ ] **Remove the conservative gate after the freeze verdict is in.**
       Proven NOT to fix the freeze (#11 died with the stream choked
