@@ -72,10 +72,17 @@ void Ds4Serializer::pack(const PadState& s, std::uint8_t out[64]) {
     // 0x00 as "0% battery" and may reject the pad.
     out[30] = 0x1A;
 
-    // Touchpad block (DS4Windows DS4_TOUCHPAD_DATA_OFFSET semantics):
-    //   [33] connection info, [34] packet counter, [35-38] point 1,
-    //   [39] point 2 inactive.
-    out[33] = 0x00;
+    // Touchpad block (DS4 USB report layout):
+    //   byte 33: num_touch_reports — hid-playstation parses this as the
+    //            COUNT of buffered touch packets; 0x00 = "no touch data"
+    //            and the touchpad node stays silent. We synthesize one
+    //            packet per report → 0x01. (Games/libScePad/DS4Windows
+    //            read fingers from 35+ regardless.)
+    //   byte 34: first touch packet timestamp (counter)
+    //   bytes 35-38: touch point 1 — [35] bit7=1 no touch / bits0-6 id,
+    //                [36] X low 8, [37] X high 4 | Y low 4, [38] Y high 8
+    //   bytes 39-42: touch point 2 (unused, marked inactive)
+    out[33] = 0x01;
     out[34] = touch_counter_++;
     if (s.touch_active) {
         out[35] = s.touch_id & 0x7F;
