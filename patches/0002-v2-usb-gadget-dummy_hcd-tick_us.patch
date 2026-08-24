@@ -1,4 +1,4 @@
-From 3f78802f021e51a8897b2e57f9a3f0790b13e205 Mon Sep 17 00:00:00 2001
+From 1ca2477fe845589e6de0ae233ec8e3e852aa9281 Mon Sep 17 00:00:00 2001
 From: Mikhail Zubenko <misha.zubenko.01@yandex.ru>
 Date: Mon, 24 Aug 2026 05:24:34 +0000
 Subject: [PATCH v2] usb: gadget: dummy_hcd: add tick_us module parameter for
@@ -15,7 +15,8 @@ with a current BIOS and a stock kernel) this timer rate co-existing
 with a live Bluetooth session on the machine's real xHCI controller
 resulted in a hard, below-software platform hang: printk, SysRq, NMI
 and both watchdogs died in the same instant, with no panic, no MCE,
-and empty pstore.  13 occurrences over 5 days, fully reproducible.
+and empty pstore.  13 occurrences over 5 days, reliably reproducible
+with that configuration (hangs within 20 min to 2.5 h of uptime).
 The same workload with the emulated microframe lengthened to 1000 us
 (this parameter) ran ~8 hours with zero hangs, and USB-cable sessions
 (identical gadget traffic, no Bluetooth co-existence) never hung.
@@ -24,9 +25,10 @@ Note that lengthening the emulated microframe makes the emulation run
 slower than a physical device would; users of the parameter trade
 that emulation fidelity for interrupt-rate headroom.
 
-The bandwidth model accounts a per-frame budget regardless of how
-often frames are simulated, so nothing else in the driver's behaviour
-depends on the emulated microframe length.
+The per-frame bandwidth budget in dummy_timer() does not scale with
+the emulated microframe length; making that accounting microframe-
+correct is planned as a follow-up patch.  Otherwise nothing in the
+driver's behaviour depends on the emulated microframe length.
 
 Default keeps the current 125 us behaviour bit-for-bit (and defaults
 to 1000 us for full-speed emulation, where the natural unit is the
@@ -38,7 +40,7 @@ Signed-off-by: Mikhail Zubenko <misha.zubenko.01@yandex.ru>
  1 file changed, 44 insertions(+), 3 deletions(-)
 
 diff --git a/drivers/usb/gadget/udc/dummy_hcd.c b/drivers/usb/gadget/udc/dummy_hcd.c
-index c0e40fa..60f6775 100644
+index c0e40fa..0884090 100644
 --- a/drivers/usb/gadget/udc/dummy_hcd.c
 +++ b/drivers/usb/gadget/udc/dummy_hcd.c
 @@ -51,7 +51,6 @@
@@ -121,7 +123,7 @@ index c0e40fa..60f6775 100644
  static int dummy_start_ss(struct dummy_hcd *dum_hcd)
  {
  	hrtimer_setup(&dum_hcd->timer, dummy_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL_SOFT);
-+	dum_hcd->timer_interval = ns_to_ktime(mod_data.tick_us * NSEC_PER_USEC);
++	dum_hcd->timer_interval = ns_to_ktime((u64)mod_data.tick_us * NSEC_PER_USEC);
  	dum_hcd->rh_state = DUMMY_RH_RUNNING;
  	dum_hcd->stream_en_ep = 0;
  	INIT_LIST_HEAD(&dum_hcd->urbp_list);
@@ -129,7 +131,7 @@ index c0e40fa..60f6775 100644
  
  	spin_lock_init(&dum_hcd->dum->lock);
  	hrtimer_setup(&dum_hcd->timer, dummy_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL_SOFT);
-+	dum_hcd->timer_interval = ns_to_ktime(mod_data.tick_us * NSEC_PER_USEC);
++	dum_hcd->timer_interval = ns_to_ktime((u64)mod_data.tick_us * NSEC_PER_USEC);
  	dum_hcd->rh_state = DUMMY_RH_RUNNING;
  
  	INIT_LIST_HEAD(&dum_hcd->urbp_list);
