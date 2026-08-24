@@ -90,6 +90,18 @@
 
 ## Backlog / research
 
+- [ ] **DKMS package for pds-udc — the gap-filler, not forever.**
+      Timeline reality: if the upstream tick_us patch is accepted
+      (v2 sent 2026-08-24, in review on linux-usb), it reaches
+      mainline in 2-6 weeks (usb-next → merge window), rolling distros
+      (CachyOS/Arch) within weeks after, Bazzite-class in months,
+      SteamOS when Valve hops to a kernel that already carries it
+      (quarter-to-year). The DKMS package covers the gap and old
+      kernels: PKGBUILD + dkms.conf (CC=clang for CachyOS kernels —
+      gcc builds fail on -mllvm/-mstack-alignment) + the existing
+      Makefile. Drop/museum it once distros catch up — SteamOS-class
+      platforms take upstream only, DKMS is not installable there.
+
 - [ ] **U-1: own soft-UDC (patched dummy_hcd) — VALIDATED-IN-USE
       2026-08-23, ~8 h zero-freeze across ticks.** Build: pds_udc =
       dummy_hcd clone (v7.1) renamed + `pds_tick_us` module param;
