@@ -1,4 +1,4 @@
-From 397473a51ff0d773849242ab07037f8121236e4e Mon Sep 17 00:00:00 2001
+From 3f78802f021e51a8897b2e57f9a3f0790b13e205 Mon Sep 17 00:00:00 2001
 From: Mikhail Zubenko <misha.zubenko.01@yandex.ru>
 Date: Mon, 24 Aug 2026 05:24:34 +0000
 Subject: [PATCH v2] usb: gadget: dummy_hcd: add tick_us module parameter for
@@ -34,11 +34,11 @@ to 1000 us for full-speed emulation, where the natural unit is the
 
 Signed-off-by: Mikhail Zubenko <misha.zubenko.01@yandex.ru>
 ---
- drivers/usb/gadget/udc/dummy_hcd.c | 46 ++++++++++++++++++++++++++++--
- 1 file changed, 43 insertions(+), 3 deletions(-)
+ drivers/usb/gadget/udc/dummy_hcd.c | 47 ++++++++++++++++++++++++++++--
+ 1 file changed, 44 insertions(+), 3 deletions(-)
 
 diff --git a/drivers/usb/gadget/udc/dummy_hcd.c b/drivers/usb/gadget/udc/dummy_hcd.c
-index c0e40fa..c5e8a1d 100644
+index c0e40fa..60f6775 100644
 --- a/drivers/usb/gadget/udc/dummy_hcd.c
 +++ b/drivers/usb/gadget/udc/dummy_hcd.c
 @@ -51,7 +51,6 @@
@@ -81,16 +81,17 @@ index c0e40fa..c5e8a1d 100644
  };
  
  static struct dummy_hcd_module_parameters mod_data = {
-@@ -79,6 +103,8 @@ module_param_named(is_high_speed, mod_data.is_high_speed, bool, S_IRUGO);
+@@ -79,6 +103,9 @@ module_param_named(is_high_speed, mod_data.is_high_speed, bool, S_IRUGO);
  MODULE_PARM_DESC(is_high_speed, "true to simulate HighSpeed connection");
  module_param_named(num, mod_data.num, uint, S_IRUGO);
  MODULE_PARM_DESC(num, "number of emulated controllers");
 +module_param_cb(tick_us, &tick_us_ops, &mod_data.tick_us, 0444);
-+MODULE_PARM_DESC(tick_us, "Length in microseconds of an emulated microframe (default 125, one high-speed microframe); larger values reduce the interrupt-rate pressure on the host platform");
++MODULE_PARM_DESC(tick_us,
++		"Length in microseconds of an emulated microframe (default 125 for high/super-speed emulation, 1000 for full-speed); larger values reduce the interrupt-rate pressure on the host platform");
  /*-------------------------------------------------------------------------*/
  
  /* gadget side driver data structures */
-@@ -244,6 +270,7 @@ struct dummy_hcd {
+@@ -244,6 +271,7 @@ struct dummy_hcd {
  	struct dummy			*dum;
  	enum dummy_rh_state		rh_state;
  	struct hrtimer			timer;
@@ -98,7 +99,7 @@ index c0e40fa..c5e8a1d 100644
  	u32				port_status;
  	u32				old_status;
  	unsigned long			re_timeout;
-@@ -1329,7 +1356,7 @@ static int dummy_urb_enqueue(
+@@ -1329,7 +1357,7 @@ static int dummy_urb_enqueue(
  	/* kick the scheduler, it'll do the rest */
  	if (!dum_hcd->timer_pending) {
  		dum_hcd->timer_pending = 1;
@@ -107,7 +108,7 @@ index c0e40fa..c5e8a1d 100644
  				HRTIMER_MODE_REL_SOFT);
  	}
  
-@@ -2029,7 +2056,7 @@ return_urb:
+@@ -2029,7 +2057,7 @@ return_urb:
  			dum_hcd->rh_state == DUMMY_RH_RUNNING) {
  		/* want a 1 msec delay here */
  		dum_hcd->timer_pending = 1;
@@ -116,7 +117,7 @@ index c0e40fa..c5e8a1d 100644
  				HRTIMER_MODE_REL_SOFT);
  	}
  
-@@ -2509,6 +2536,7 @@ static DEVICE_ATTR_RO(urbs);
+@@ -2509,6 +2537,7 @@ static DEVICE_ATTR_RO(urbs);
  static int dummy_start_ss(struct dummy_hcd *dum_hcd)
  {
  	hrtimer_setup(&dum_hcd->timer, dummy_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL_SOFT);
@@ -124,7 +125,7 @@ index c0e40fa..c5e8a1d 100644
  	dum_hcd->rh_state = DUMMY_RH_RUNNING;
  	dum_hcd->stream_en_ep = 0;
  	INIT_LIST_HEAD(&dum_hcd->urbp_list);
-@@ -2538,6 +2566,7 @@ static int dummy_start(struct usb_hcd *hcd)
+@@ -2538,6 +2567,7 @@ static int dummy_start(struct usb_hcd *hcd)
  
  	spin_lock_init(&dum_hcd->dum->lock);
  	hrtimer_setup(&dum_hcd->timer, dummy_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL_SOFT);
@@ -132,7 +133,7 @@ index c0e40fa..c5e8a1d 100644
  	dum_hcd->rh_state = DUMMY_RH_RUNNING;
  
  	INIT_LIST_HEAD(&dum_hcd->urbp_list);
-@@ -2828,6 +2857,17 @@ static int __init dummy_hcd_init(void)
+@@ -2828,6 +2858,17 @@ static int __init dummy_hcd_init(void)
  		return -EINVAL;
  	}
  
