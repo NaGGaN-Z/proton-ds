@@ -351,6 +351,45 @@ cmd_gadget_start() {
         c_err "                or set PDS_GADGET_SHIM=<path>"
         return 2
     fi
+
+    # Steam holding the pad's hidraw BEFORE the daemon starts keeps its
+    # lightbar/output ownership after we take over (observed 2026-08-24:
+    # pad connected in Steam first -> daemon started -> lightbar dead until
+    # Steam restart). Refuse with a clear message instead of silently
+    # producing a half-working stack; --kick-steam restarts it for you.
+    local kick_steam=no
+    local a
+    local args_in=("$@")
+    for a in "${args_in[@]}"; do
+        [[ "$a" == "--kick-steam" ]] && kick_steam=yes
+    done
+    if pgrep -x steam >/dev/null 2>&1; then
+        if [[ "$kick_steam" == yes ]]; then
+            c_warn "Steam is running -- stopping it (--kick-steam)..."
+            if command -v steam >/dev/null 2>&1; then
+                steam -shutdown >/dev/null 2>&1 || pkill -x steam
+                local waited=0
+                while pgrep -x steam >/dev/null 2>&1 && (( waited < 15 )); do
+                    sleep 1; ((waited++))
+                done
+            else
+                pkill -x steam
+                sleep 3
+            fi
+            if pgrep -x steam >/dev/null 2>&1; then
+                c_err "Steam did not exit within 15 s -- close it manually and retry"
+                return 2
+            fi
+            c_ok "Steam stopped; it must be started manually after the stack is up"
+        else
+            c_err "Steam is running and owns the pad's hidraw (lightbar/output conflict)"
+            c_err "  what to do: close Steam, then re-run gadget start;"
+            c_err "                or pass --kick-steam to stop it automatically"
+            c_err "                (restart Steam yourself after the stack is up)"
+            return 2
+        fi
+    fi
+
     if [[ -f "$HIDDEN_LIST" ]]; then
         c_warn "Stale hidden hidraw list found, restoring first..."
         restore_real_dualsense
@@ -368,6 +407,7 @@ cmd_gadget_start() {
             --conservative) conservative=yes; use_bridge=yes; shift ;;
             --testvid)    testvid=yes; shift ;;
             --udc)        udc="$2"; shift 2 ;;
+            --kick-steam) :; shift ;;
             *) c_err "unknown option: $1"; return 64 ;;
         esac
     done
