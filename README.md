@@ -90,11 +90,11 @@ pendulum × BT session × timer-sensitive board silicon.**
 **Fix: `tick_us` module parameter for dummy_hcd** (rate-limited
 microframe; 1000 us default-on-affected-board). Validated ~20+ hours
 cumulative across all profiles — games, touch, idle, overnight — with
-ZERO freezes (stock record before death: 20 min–2.5 h). The patch is
-**upstream and reviewed**: `Reviewed-by: Alan Stern` (2026-08-25),
-queued toward usb-next/mainline. Until it reaches distros, the
-out-of-tree pds_udc clone (same parameter) ships in this repo for
-affected boards; a DKMS package is planned.
+ZERO freezes (stock record before death: 20 min–2.5 h). The fix is
+**upstream** (module_param patch, reviewed and queued toward
+mainline); until it reaches distros, the out-of-tree pds_udc clone
+(same parameter) ships in this repo for affected boards; a DKMS
+package is planned.
 
 Posture: **USB path = stock dummy_hcd (always safe, zero freezes
 ever). BT path on affected boards = dummy_hcd with `tick_us=1000`
