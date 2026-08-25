@@ -102,7 +102,7 @@
       Makefile. Drop/museum it once distros catch up — SteamOS-class
       platforms take upstream only, DKMS is not installable there.
 
-- [ ] **U-1: own soft-UDC (patched dummy_hcd) — VALIDATED-IN-USE
+- [x] **U-1: own soft-UDC (patched dummy_hcd) — DONE 2026-08-25: ~20+h zero-freeze incl. overnight idle; upstream v5 got Reviewed-by: Alan Stern; BT 'experimental' label removed. (was: VALIDATED-IN-USE
       2026-08-23, ~8 h zero-freeze across ticks.** Build: pds_udc =
       dummy_hcd clone (v7.1) renamed + `pds_tick_us` module param;
       out-of-tree (clang, CachyOS 7.1.5); shim `--udc` override +

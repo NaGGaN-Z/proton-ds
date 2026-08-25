@@ -76,34 +76,30 @@ Design notes (hard-won, see `docs/SOLUTION.md` → E3):
   the bar partially and never rumble; rumble needs `valid_flag2@39=0x04`
   (vibration_v2 pads) and ONE combined report per effect update
 
-## Known issue: BT bridge + gadget hard-freeze — MITIGATED on the affected board (2026-08-23, watch in progress)
+## Known issue: BT bridge + gadget hard-freeze on some boards — RESOLVED via upstream-path fix (verdict + Reviewed-by 2026-08-25)
 
 The BT bridge path is fully functional — input, rumble, lightbar all
-work (encoding kernel-verified). BUT co-existing with the gadget it
-hard-freezes one test machine regardless of everything varied so far:
-traffic intensity (250 Hz full stream or ~10/s choked — dies either
-way), the bluez sixaxis plugin (non-Sony-VID gadget — dies), CPU
-C-states (POLL-only — dies), clocksource, kernel activity (idle, load,
-mid-typing). 13 freezes over 5 days; a BIOS/AGESA update spanning 2.5
-years (2024-02 → 2026-08) did NOT cure it. Instrumentation (netconsole
-beacon, hwlat tracer, armed watchdogs, panic=10) shows an instant
-below-software death with zero precursors — no panic, no trace, clean
-telemetry to the last second. USB-cable stack sessions: zero freezes
-ever; a plain DualSense over BT (no gadget): zero freezes. Verdict:
-the interaction lives in the board's chipset circuit or its
-implementation — not in AGESA, not in software we control. Next test:
-**Mitigation found (same day): pds_udc — a rate-limited dummy_hcd
-clone** (one module param, `pds_tick_us`; stock emulates a 125 us
-microframe pendulum ≈ 8 kHz; ours defaults to 1000 us). On the
-affected board the lethal config has now run ~8 h cumulative with
-ZERO freezes (stock record before death: 20 min–2.5 h), while
-delivering full gameplay AND two-finger multitouch through the
-bridge. pds_udc is a kernel module: no plain installer — DKMS
-package planned; until then it is a build-on-target artifact for
-affected boards only. USB-cable sessions keep using the stock
-dummy_hcd and need nothing. An upstream `module_param` patch is the
-long-term fix candidate. Overnight validation pending; until it
-lands, BT + stock dummy_hcd stays forbidden on affected boards.
+work (encoding kernel-verified). On one test machine (consumer AM4
+board) the gadget co-existing with a live Bluetooth session
+hard-froze the platform below software: 13 freezes over 5 days,
+invariant to traffic, plugins, C-states, clocksource, and a 2.5-year
+BIOS/AGESA update — instant silent death, no panic, no trace.
+Root cause (vacuum method): **dummy_hcd's unconditional ~8 kHz timer
+pendulum × BT session × timer-sensitive board silicon.**
+
+**Fix: `tick_us` module parameter for dummy_hcd** (rate-limited
+microframe; 1000 us default-on-affected-board). Validated ~20+ hours
+cumulative across all profiles — games, touch, idle, overnight — with
+ZERO freezes (stock record before death: 20 min–2.5 h). The patch is
+**upstream and reviewed**: `Reviewed-by: Alan Stern` (2026-08-25),
+queued toward usb-next/mainline. Until it reaches distros, the
+out-of-tree pds_udc clone (same parameter) ships in this repo for
+affected boards; a DKMS package is planned.
+
+Posture: **USB path = stock dummy_hcd (always safe, zero freezes
+ever). BT path on affected boards = dummy_hcd with `tick_us=1000`
+(or pds_udc pre-upstream). BT + stock 125 us on affected boards:
+do not.**
 
 ## Anti-pattern: dual-mode (both real pad and gadget visible)
 
